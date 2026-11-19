@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.*
+!.env.example
+data/
+dist/
+agent/agent_config.json
+downloads/*.exe
+*.log

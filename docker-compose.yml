@@ -1,0 +1,19 @@
+services:
+  tallysync:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: tallysync
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:8100:8100"
+    volumes:
+      - ./data:/data
+      - ./downloads:/srv/downloads:ro
+    networks:
+      - supabase_net
+networks:
+  supabase_net:
+    external: true
+    name: ${SUPABASE_NETWORK}

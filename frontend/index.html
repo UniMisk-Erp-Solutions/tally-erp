@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TallySync</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Look and feel follows the reference product: white page, one blue (#3F63EB), slate greys, square corners,
+   a blue hero band on every page, tiny uppercase labels, card-style steps. */
+:root{--blue:#3f63eb;--blue2:#3556d4;--ink:#0f172a;--s700:#334155;--s600:#475569;--s500:#64748b;--s400:#94a3b8;--s300:#cbd5e1;--s200:#e2e8f0;--s100:#f1f5f9;--s50:#f8fafc;
+  --teal:#0f766e;--tealbg:#f0fdfa;--tealline:#99f6e4;--amber:#b45309;--amberbg:#fff7ed;--amberline:#fed7aa;--red:#dc2626;--redbg:#fef2f2;--redline:#fecaca;--indbg:#eef2ff}
+*{box-sizing:border-box}
+body{margin:0;background:#fff;color:var(--ink);font:14px/1.55 Inter,system-ui,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--blue);text-decoration:none}a:hover{color:var(--blue2);text-decoration:underline}
+button{font:inherit}
+
+/* header: white bar, logo left, nav, outlined buttons right */
+.bar{display:flex;align-items:center;gap:4px;padding:0 32px;height:64px;background:#fff;border-bottom:1px solid var(--s200);position:sticky;top:0;z-index:20}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;letter-spacing:-.01em;margin-right:28px;color:var(--ink)}
+.tab{height:64px;padding:0 16px;border:0;border-bottom:2px solid transparent;background:none;color:var(--s700);cursor:pointer;font-weight:500;display:inline-flex;align-items:center;gap:8px}
+.tab:hover{color:var(--blue)}.tab.on{color:var(--blue);border-bottom-color:var(--blue)}
+.badge{min-width:20px;height:20px;padding:0 6px;background:var(--blue);color:#fff;font-size:11px;font-weight:700;font-style:normal;display:inline-flex;align-items:center;justify-content:center}
+.badge[hidden]{display:none}.badge.hot{background:var(--red)}
+.sp{flex:1}
+.agent{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px;border:1px solid var(--s200);background:#fff;color:var(--s700);font-weight:500;cursor:pointer}
+.agent:hover{border-color:var(--s300)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--s300);display:inline-block}.dot.ok{background:#10b981}.dot.bad{background:var(--red)}.dot.warn{background:#f59e0b}
+.link{height:38px;padding:0 14px;border:1px solid var(--s200);background:#fff;color:var(--s700);font-weight:500;cursor:pointer;margin-left:8px}.link:hover{border-color:var(--s300);color:var(--ink)}
+
+/* hero band: blue, soft glow circles and a faint grid, eyebrow, big title, light description, buttons */
+.hero{position:relative;overflow:hidden;background:var(--blue);color:#fff}
+.hero:before{content:"";position:absolute;inset:0;opacity:.18;pointer-events:none;
+  background-image:linear-gradient(to right,rgba(255,255,255,.28) 1px,transparent 1px),linear-gradient(to bottom,rgba(255,255,255,.28) 1px,transparent 1px);background-size:44px 44px}
+.hero:after{content:"";position:absolute;left:-96px;top:40px;width:288px;height:288px;border-radius:50%;background:rgba(255,255,255,.10);filter:blur(48px);pointer-events:none}
+.hero .blob{position:absolute;right:-64px;bottom:-20px;width:320px;height:320px;border-radius:50%;background:rgba(107,138,255,.4);filter:blur(48px);pointer-events:none}
+.hero-in{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:40px 32px 44px}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.85)}
+.hero h1{margin:8px 0 0;font-size:36px;line-height:1.15;font-weight:700;letter-spacing:-.02em;color:#fff}
+.hero .lead{margin:12px 0 0;max-width:720px;color:rgba(255,255,255,.88);font-size:15px}
+.acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}
+.hb{height:40px;padding:0 20px;border:1px solid transparent;border-radius:0;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;color:#fff;text-decoration:none}
+.hb.w{background:#fff;color:var(--blue2)}.hb.w:hover{background:var(--indbg);text-decoration:none}
+.hb.o{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.4)}.hb.o:hover{background:rgba(255,255,255,.2);text-decoration:none}
+.hchip{display:inline-block;margin-left:10px;padding:3px 9px;border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.14);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;vertical-align:middle;color:#fff}
+
+.wrap{max-width:1180px;margin:0 auto;padding:32px 32px 80px}
+.tag{font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--s400)}
+.muted{color:var(--s500)}
+
+/* cards: thin slate border, no rounding, a grey header strip, lift on hover */
+.card{background:#fff;border:1px solid var(--s200);padding:24px;margin-bottom:24px;transition:border-color .15s,box-shadow .15s}
+.card:hover{border-color:var(--s300);box-shadow:0 8px 24px -6px rgba(15,23,42,.10)}
+.card>.head:first-child{margin:-24px -24px 20px;padding:16px 24px;background:rgba(248,250,252,.7);border-bottom:1px solid var(--s100)}
+.card h2{margin:0;font-size:17px;font-weight:700;letter-spacing:-.01em}
+.card .sub{margin:4px 0 18px;color:var(--s600)}
+.head{display:flex;align-items:center;gap:12px}.head .status{margin-left:auto}
+.step{display:flex;gap:14px;align-items:flex-start}
+.step .n{width:30px;height:30px;border:1px solid var(--s200);background:#fff;color:var(--blue);font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 0 0 1px rgba(63,99,235,.2)}
+.steps{display:grid;gap:14px}.steps .step .n{box-shadow:none;color:var(--s500);background:var(--s100)}
+
+/* buttons: square, blue primary, outlined secondary */
+.btn,label.btn,a.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:42px;padding:0 22px;border:1px solid var(--s200);background:#fff;color:var(--s700);font-weight:600;font-size:14px;cursor:pointer;text-decoration:none;border-radius:0}
+.btn:hover,label.btn:hover,a.btn:hover{border-color:var(--s300);color:var(--ink);text-decoration:none}
+.btn.pri,a.btn.pri{background:var(--blue);border-color:var(--blue);color:#fff}.btn.pri:hover,a.btn.pri:hover{background:var(--blue2);border-color:var(--blue2);color:#fff}
+.btn.good{background:var(--teal);border-color:var(--teal);color:#fff}.btn.good:hover{background:#0b5f58;border-color:#0b5f58;color:#fff}
+.btn.sm{height:34px;padding:0 14px;font-size:13px}
+.btn.txt{border-color:transparent;background:none;color:var(--s500);padding:0 10px}.btn.txt:hover{color:var(--ink);border-color:transparent}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+
+.hb[disabled]{opacity:.55;cursor:not-allowed}
+/* sync pipeline */
+.pbar{height:4px;background:var(--s100);margin:0 0 18px}.pbar i{display:block;height:100%;background:var(--blue);transition:width .6s ease}
+.pipe{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.ps{display:flex;gap:12px;align-items:flex-start;padding:14px;border:1px solid var(--s200);background:#fff}
+.ps b{display:block;font-size:13px}.ps span{display:block;font-size:12px;color:var(--s500)}
+.pc{width:26px;height:26px;border:1px solid var(--s200);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--s500);flex:none}
+.ps.done{border-color:var(--tealline);background:var(--tealbg)}.ps.done .pc{background:var(--teal);border-color:var(--teal);color:#fff}
+.ps.active{border-color:var(--blue)}.ps.active .pc{border-color:var(--blue)}
+.ps.error{border-color:var(--redline);background:var(--redbg)}.ps.error .pc{background:var(--red);border-color:var(--red);color:#fff}
+.spin{width:14px;height:14px;border:2px solid var(--s200);border-top-color:var(--blue);border-radius:50%;animation:sp .8s linear infinite;display:block}
+@keyframes sp{to{transform:rotate(360deg)}}
+/* notes */
+.note{padding:14px 18px;margin-bottom:16px;background:var(--amberbg);border:1px solid var(--amberline);color:#9a3412}
+.note.ok{background:var(--tealbg);border-color:var(--tealline);color:var(--teal)}.note.bad{background:var(--redbg);border-color:var(--redline);color:#b91c1c}
+.note ul{margin:6px 0 0;padding-left:20px}
+
+/* filters */
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+.pillbtn{height:36px;padding:0 16px;border:1px solid var(--s200);background:#fff;color:var(--s600);cursor:pointer;font-weight:500;border-radius:0}
+.pillbtn:hover{border-color:var(--s300);color:var(--ink)}.pillbtn.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.pillbtn em{font-style:normal;margin-left:8px;font-size:12px;opacity:.7}
+.search{margin-left:auto;display:flex;align-items:center;height:36px;padding:0 12px;border:1px solid var(--s300);background:#fff;min-width:220px}
+.search input{all:unset;flex:1;color:var(--ink);font-size:14px}.search input::placeholder{color:var(--s400)}.search:focus-within{border-color:var(--blue)}
+
+/* the list */
+.list{border:1px solid var(--s200);background:#fff}
+.item{display:flex;align-items:center;gap:16px;padding:16px 20px;border-bottom:1px solid var(--s100);cursor:pointer}
+.item:last-child{border-bottom:0}.item:hover{background:var(--s50)}
+.item .main{flex:1;min-width:0}.item .t{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .s{color:var(--s500);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .amt{font-weight:600;text-align:right;min-width:110px}.item .chev{color:var(--s300);font-size:22px}
+.empty{padding:48px 20px;text-align:center;color:var(--s500)}.empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
+
+/* status chips: square, tiny, uppercase */
+.pill{display:inline-block;padding:4px 9px;border:1px solid var(--s200);background:#fff;color:var(--s700);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.pill.s-extracted,.pill.s-new,.pill.s-queued{background:var(--amberbg);border-color:var(--amberline);color:var(--amber)}
+.pill.s-approved{background:var(--indbg);border-color:#c7d2fe;color:var(--blue2)}
+.pill.s-synced,.pill.ok{background:var(--tealbg);border-color:var(--tealline);color:var(--teal)}
+.pill.s-error,.pill.bad{background:var(--redbg);border-color:var(--redline);color:var(--red)}
+
+/* forms + tables */
+.form{display:grid;grid-template-columns:170px 1fr;gap:12px 16px;align-items:center;margin-bottom:16px}
+.form label{color:var(--s600);font-size:13px;font-weight:500}
+input,select{font:inherit;height:42px;padding:0 12px;border:1px solid var(--s300);border-radius:0;background:#fff;color:var(--ink);width:100%}
+input:focus,select:focus{outline:2px solid rgba(63,99,235,.22);border-color:var(--blue)}
+input:disabled,select:disabled{background:var(--s50);color:var(--s500)}
+details{margin:6px 0 18px}summary{cursor:pointer;color:var(--blue);font-weight:600;padding:6px 0;list-style:none}summary::-webkit-details-marker{display:none}
+summary:before{content:"▸ "}details[open] summary:before{content:"▾ "}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--s100)}
+th{color:var(--s400);font-weight:700;font-size:10px;letter-spacing:.14em;text-transform:uppercase;background:var(--s50)}
+td input{height:36px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}
+iframe,img.pv{width:100%;height:720px;border:1px solid var(--s200);object-fit:contain;background:#fff}
+code{background:var(--indbg);color:var(--blue2);padding:2px 6px;font-size:12.5px;word-break:break-all}
+.sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:24px}
+.sum div{padding:18px 20px;border:1px solid var(--s200);background:#fff;text-transform:uppercase;font-size:10px;font-weight:700;letter-spacing:.14em;color:var(--s400)}
+.sum b{display:block;font-size:30px;line-height:1.2;letter-spacing:-.02em;text-transform:none;color:var(--ink);margin-bottom:2px}
+.sum .matched b{color:var(--teal)}.sum .mismatch b,.sum .not_sent b{color:var(--amber)}.sum .missing_in_tally b,.sum .deleted_in_tally b{color:var(--red)}.sum .missing_in_software b{color:var(--blue)}
+.matched{color:var(--teal)}.mismatch,.not_sent{color:var(--amber)}.missing_in_tally,.deleted_in_tally{color:var(--red)}.missing_in_software{color:var(--blue)}
+.auth-card{max-width:440px;margin:0 auto}.auth-card .form{grid-template-columns:1fr}
+
+#toasts{position:fixed;right:24px;bottom:24px;display:grid;gap:10px;z-index:99;max-width:380px}
+.toast{padding:14px 18px;background:var(--ink);color:#fff;box-shadow:0 14px 40px rgba(15,23,42,.35);border-left:3px solid var(--blue)}
+.toast.bad{border-left-color:var(--red)}.toast.ok{border-left-color:#10b981}
+@media(max-width:860px){.cols{grid-template-columns:1fr}.bar{padding:0 12px;overflow-x:auto}.logo{margin-right:8px}.logo span{display:none}.form{grid-template-columns:1fr}.search{margin-left:0;width:100%}.hero h1{font-size:28px}.hero-in,.wrap{padding-left:16px;padding-right:16px}.item .amt{display:none}}
+</style></head><body>
+<div id="app"></div>
+<div id="toasts"></div>
+<script src="config.js"></script>
+<script>
+const $=(s,r=document)=>r.querySelector(s);
+let SYNC=null,SYNCTIMER=null,NOTICE='',NOTICEBAD=false;
+let SYNCCLOSED=0;try{SYNCCLOSED=+(sessionStorage.getItem('syncClosed')||0)}catch{}
+let ME=null,ST=null,TAB='docs',OPEN=null,GROUP='review',Q='',RT=0;   // RT: render token, so a slow old load never overwrites a newer page
+
+/* ---------- browser history: Back / Forward and refresh keep you inside the app ---------- */
+function hashFor(){
+  if(TAB==='match')return '#/check';
+  if(TAB==='setup')return '#/setup';
+  if(OPEN)return '#/documents/'+OPEN;
+  const sp=new URLSearchParams();if(GROUP!=='review')sp.set('f',GROUP);if(Q)sp.set('q',Q);
+  const s=sp.toString();return '#/documents'+(s?'?'+s:'');
+}
+function route(){ // address -> page state
+  let h=location.hash.slice(1);if(h.startsWith('/'))h=h.slice(1);
+  const [path,qs]=h.split('?'),parts=path.split('/'),sp=new URLSearchParams(qs||'');
+  TAB='docs';OPEN=null;
+  if(parts[0]==='check')TAB='match';else if(parts[0]==='setup')TAB='setup';else if(parts[1])OPEN=parseInt(parts[1],10)||null;
+  GROUP=sp.get('f')||'review';Q=sp.get('q')||'';
+}
+function nav(mode){ // page state -> address. 'push' = a new Back step (tabs, opening a document); 'replace' = same step (filters, after an action)
+  const hh=hashFor(),d=(history.state&&history.state.d)||0;
+  if(hh!==location.hash){if(mode==='push')history.pushState({d:d+1},'',hh);else history.replaceState({d},'',hh)}
+  show();
+}
+function setGroup(g){GROUP=g;OPEN=null;TAB='docs';nav('replace')}
+function backToList(){if(history.state&&history.state.d>0)history.back();else{OPEN=null;nav('replace')}}
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const CFG=window.TALLYSYNC_CONFIG||{},BASE=String(CFG.API_URL||'').replace(/\/+$/,'');
+let TOKEN='';try{TOKEN=localStorage.getItem('tallysync_token')||''}catch{}
+const setToken=t=>{TOKEN=t||'';try{t?localStorage.setItem('tallysync_token',t):localStorage.removeItem('tallysync_token')}catch{}};
+/** A 30-minute link for one file or download (iframes and downloads cannot send the login header). */
+async function signed(path){return (await api('/signed-url',{method:'POST',body:{path}})).url}
+const openSigned=p=>signed(p).then(u=>{location.href=u}).catch(fail);
+async function api(path,opt={}){
+  opt.headers=Object.assign({},opt.headers);
+  if(opt.body&&!(opt.body instanceof FormData)){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(opt.body)}
+  if(TOKEN)opt.headers.Authorization='Bearer '+TOKEN;
+  opt.credentials=BASE?'omit':'same-origin';
+  let r;try{r=await fetch(BASE+'/api'+path,opt)}catch{throw new Error('Cannot reach the server. Check your internet connection and try again.')}
+  if(r.status===401&&path!=='/login'){setToken('');ME=null;render();throw new Error('login')}
+  const j=await r.json().catch(()=>({}));if(!r.ok){const err=new Error(j.detail||r.statusText);err.code=j.code;throw err}return j}
+function toast(m,kind){const d=document.createElement('div');d.className='toast '+(kind||'');d.textContent=m;$('#toasts').appendChild(d);setTimeout(()=>d.remove(),6000)}
+const fail=e=>{if(e.message!=='login')toast(e.message,'bad')};
+const money=n=>Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2});
+const ago=t=>{if(!t)return 'never';const s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<60)return 'just now';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' days ago'};
+const LOGO='<svg width="32" height="32" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" fill="#3f63eb"/><path d="M8 12h12l-3.2-3.2M22 18H10l3.2 3.2" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const TYPES={purchase_bill:'Purchase bill',sales_invoice:'Sales invoice',purchase_order:'Purchase order',sales_order:'Sales order'};
+const SL={new:'Reading',extracted:'To review',approved:'Approved',queued:'Posting',synced:'In Tally',error:'Problem',ignored:'Ignored'};
+const LABEL={matched:'matches',mismatch:'differs',missing_in_tally:'missing in Tally',not_sent:'not sent yet',deleted_in_tally:'deleted in Tally',missing_in_software:'only in Tally'};
+const lab=k=>LABEL[k]||k.replace(/_/g,' ');
+
+/** Every page: blue hero band (eyebrow, title, text, buttons) followed by the white content area. */
+function page({eyebrow='Email to Tally',title,lead='',acts='',body=''}){
+  return `<section class=hero><i class=blob></i><div class=hero-in><div class=eyebrow>${eyebrow}</div><h1>${title}</h1>${lead?`<p class=lead>${lead}</p>`:''}${acts?`<div class=acts>${acts}</div>`:''}</div></section><div class=wrap>${body}</div>`}
+
+/* ---------- numbers behind the badges and the next-step hint ---------- */
+async function refreshStats(){ST=await api('/stats')}
+const agentOn=()=>{const a=ST&&ST.org&&ST.org.agent_last_seen;return !!a&&(Date.now()-new Date(a))/1000<60};
+/** 'agent_off' = the Tally program is not running, 'tally_closed' = it runs but TallyPrime does not answer, 'ok' = ready */
+function tallyState(){
+  if(!agentOn())return 'agent_off';
+  const o=ST&&ST.org;
+  if(o&&o.tally_ok===false&&o.tally_checked_at&&(Date.now()-new Date(o.tally_checked_at))/1000<30)return 'tally_closed';
+  return 'ok';
+}
+const TS_TEXT={agent_off:'Tally program not running',tally_closed:'TallyPrime is not open',ok:'Tally connected'};
+const TS_DOT={agent_off:'bad',tally_closed:'warn',ok:'ok'};
+function counts(){const c=(ST&&ST.counts)||{};return{review:(c.new||0)+(c.extracted||0),approved:c.approved||0,posting:c.queued||0,tally:c.synced||0,issues:(c.error||0)+((ST&&ST.held)||0),all:Object.values(c).reduce((a,b)=>a+b,0)-(c.ignored||0)}}
+function paint(){
+  if(!ST||!$('#a-dot'))return;const n=counts();
+  const bd=(id,v,hot)=>{const e=$('#'+id);e.hidden=!v;e.textContent=v;e.classList.toggle('hot',!!hot)};
+  bd('b-docs',n.review);bd('b-match',n.issues,true);
+  const ts=tallyState();
+  $('#a-dot').className='dot '+TS_DOT[ts];
+  $('#a-txt').textContent=TS_TEXT[ts];
+  const ap=$('#agent-pill');if(ap){ap.className='pill '+(ts==='ok'?'ok':'s-extracted');ap.textContent=ts==='ok'?'Connected now':ts==='tally_closed'?'Program running, TallyPrime is closed':'Not connected yet'}
+}
+
+/* ---------- frame ---------- */
+function render(){
+  if(!ME){
+    $('#app').innerHTML=`<header class=bar><div class=logo>${LOGO}<span>TallySync</span></div></header><main id=m>${page({eyebrow:'Email to Tally',title:'Sign in',lead:'Bills and orders from your inbox, read by AI and posted to Tally after your approval.',body:`<div class="card auth-card"><div class=head><h2>Your account</h2></div><div class=form><input id=em placeholder=Email autocomplete=username><input id=pw type=password placeholder=Password autocomplete=current-password></div><button class="btn pri" style="width:100%" id=login>Sign in</button></div>`})}</main>`;
+    $('#login').onclick=doLogin;$('#pw').onkeydown=e=>e.key==='Enter'&&doLogin();return}
+  $('#app').innerHTML=`<header class=bar><div class=logo>${LOGO}<span>TallySync</span></div>
+   <button class="tab" id=t-docs>Documents<em class=badge id=b-docs hidden></em></button>
+   <button class="tab" id=t-match>Tally check<em class="badge hot" id=b-match hidden></em></button>
+   <button class="tab" id=t-setup>Setup</button><span class=sp></span>
+   <button class=agent id=a-chip title="Open Setup"><i class="dot" id=a-dot></i><span id=a-txt>…</span></button>
+   <button class=link id=logout>Sign out</button></header><main id=m></main>`;
+  ['docs','match','setup'].forEach(k=>$('#t-'+k).onclick=()=>go(k));
+  $('#a-chip').onclick=()=>go('setup');
+  $('#logout').onclick=()=>api('/logout',{method:'POST'}).catch(()=>{}).then(()=>{setToken('');ME=null;ST=null;render()});
+  show();paint();
+}
+function go(tab){TAB=tab;OPEN=null;nav('push')}
+function show(){
+  RT++;document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.id==='t-'+TAB));
+  const run=({docs,match,setup})[TAB];Promise.resolve(run()).catch(fail);
+}
+async function doLogin(){try{const r=await api('/login',{method:'POST',body:{email:$('#em').value,password:$('#pw').value}});setToken(r.token);boot()}catch(e){fail(e)}}
+async function boot(){try{ME=await api('/me');await refreshStats()}catch{}render()}
+
+/* ---------- Documents: the main page ---------- */
+const FILTERS=[['review','To review'],['approved','Approved'],['synced','In Tally'],['all','All']];
+async function docs(){
+  const my=RT;
+  if(OPEN)return review(OPEN);
+  const rows=await api('/documents?'+new URLSearchParams({group:GROUP==='all'?'':GROUP,q:Q}));
+  await Promise.all([refreshStats().catch(()=>{}),loadSync()]);if(my!==RT)return;
+  const n=counts(),cnt={review:n.review,approved:n.approved+n.posting,synced:n.tally,all:n.all,issues:n.issues};
+  const filters=GROUP==='issues'?[...FILTERS,['issues','Needs attention']]:FILTERS;
+  $('#m').innerHTML=page({eyebrow:'Email to Tally',title:'Documents',lead:'Bills, invoices and orders that came in by email, read by AI and ready for your approval.',
+   acts:toButton(n)+fromButton(false)+`<label class="hb o">Upload a file<input type=file multiple hidden onchange=upload(this)></label>`,
+   body:`<div id=syncpanel>${syncPanelHtml()}</div>${ME.ai_ready?'':'<div class="note bad">The AI key is missing, so documents cannot be read. Add GEMINI_API_KEY on the server.</div>'}   <div class=filters>${filters.map(([k,l])=>`<button class="pillbtn ${GROUP===k?'on':''}" onclick="setGroup('${k}')">${l}<em>${cnt[k]??''}</em></button>`).join('')}
+    <div class=search><input id=q placeholder="Search" value="${esc(Q)}"></div></div>
+   <div class=list>${rows.map(r=>`<div class=item onclick="openDoc(${r.id})"><div class=main><div class=t>${esc(r.party||r.filename)}</div>
+     <div class=s>${esc([TYPES[r.doc_type],r.number].filter(Boolean).join(' · ')||r.sender||r.source)}</div></div>
+     ${r.warnings?.length?`<span class="pill s-extracted" title="Check this one">⚠ ${r.warnings.length}</span>`:''}${r.tally_state==='possible_duplicate'?'<span class="pill s-error">Possible duplicate</span>':''}
+     <div class=amt>${r.total?money(r.total):''}</div><span class="pill s-${r.status}">${SL[r.status]||r.status}</span><span class=chev>›</span></div>`).join('')
+     ||`<div class=empty><b>${Q?'Nothing found':GROUP==='review'?'Nothing to review':'Nothing here yet'}</b>${Q?'Try another word.':n.all?'':'Connect your mailbox in Setup, or upload a file.'}</div>`}</div>`});
+  const q=$('#q');q.onkeydown=e=>{if(e.key==='Enter'){Q=q.value.trim();GROUP='all';nav('replace')}};
+  if(Q){q.focus()}
+  paint();
+}
+function openDoc(id){OPEN=id;TAB='docs';nav('push')}
+async function upload(inp){const fd=new FormData();[...inp.files].forEach(f=>fd.append('files',f));try{await api('/documents/upload',{method:'POST',body:fd});toast('Uploaded. It is being read now.','ok');GROUP='review';nav('replace')}catch(e){fail(e)}}
+/* ---------- Sync pipeline: real progress, both buttons locked until it finishes ---------- */
+const syncBusy=()=>!!(SYNC&&SYNC.status==='running');
+async function loadSync(){try{SYNC=(await api('/sync/status')).run}catch(e){if(e.message==='login')throw e}if(syncBusy())startSyncPoll()}
+function startSyncPoll(){
+  if(SYNCTIMER)return;
+  SYNCTIMER=setInterval(async()=>{
+    try{SYNC=(await api('/sync/status')).run}catch{return}
+    paintSync();
+    if(!syncBusy()){clearInterval(SYNCTIMER);SYNCTIMER=null;await refreshStats().catch(()=>{});paint();if(!OPEN&&(TAB==='docs'||TAB==='match'))show()}
+  },1200);
+}
+function toButton(n){const busy=syncBusy();return `<button class="hb w" data-sync=to onclick=syncNow() ${busy?'disabled':''}>${busy&&SYNC.kind==='to'?'Syncing to Tally…':'Sync to Tally'+(n&&n.approved&&!busy?` (${n.approved})`:'')}</button>`}
+function fromButton(white){const busy=syncBusy();return `<button class="hb ${white?'w':'o'}" data-sync=from onclick=pullNow() ${busy?'disabled':''}>${busy&&SYNC.kind==='from'?'Reading Tally…':'Sync from Tally'}</button>`}
+function closeSync(id){SYNCCLOSED=id;try{sessionStorage.setItem('syncClosed',id)}catch{}paintSync()}
+function syncSummary(s){
+  const r=s.result||{};let li;
+  if(s.kind==='to'){
+    li=[`<li><b>${r.posted||0}</b> posted to Tally</li>`];
+    if(r.found)li.push(`<li><b>${r.found}</b> already in Tally, skipped (nothing is posted twice)</li>`);
+    if(r.held)li.push(`<li><b>${r.held}</b> held for your decision: a similar entry exists in Tally · <a href=# onclick="closeSync(${s.id});setGroup('issues');return false">Show</a></li>`);
+    if(r.failed)li.push(`<li><b>${r.failed}</b> failed: ${esc((r.errors||[]).join(' | '))}</li>`);
+    return `<div class="note ${r.failed?'bad':'ok'}" style="margin:16px 0 0"><b>Sync to Tally is complete.</b><ul>${li.join('')}</ul></div>`;
+  }
+  li=[`<li>Read <b>${r.vouchers||0}</b> entries from Tally</li>`];
+  if(r.created)li.push(`<li><b>${r.created}</b> new entr${r.created===1?'y':'ies'} typed in Tally added here</li>`);
+  if(r.found)li.push(`<li><b>${r.found}</b> of your documents were already in Tally and are marked as posted</li>`);
+  if(r.merged)li.push(`<li><b>${r.merged}</b> merged with a matching document</li>`);
+  if(r.updated)li.push(`<li><b>${r.updated}</b> updated to match Tally</li>`);
+  if(r.deleted||r.reset)li.push(`<li><b>${(r.deleted||0)}</b> deleted in Tally${r.reset?`, ${r.reset} document(s) set back to approved`:''}</li>`);
+  if(r.held)li.push(`<li><b>${r.held}</b> held for your decision (similar entry in Tally)</li>`);
+  if(li.length===1)li.push('<li>Everything was already up to date</li>');
+  return `<div class="note ok" style="margin:16px 0 0"><b>Sync from Tally is complete.</b><ul>${li.join('')}</ul></div>`;
+}
+function syncPanelHtml(){
+  if(NOTICE)return `<div class="note ${NOTICEBAD?'bad':''}">${esc(NOTICE)} <button class="btn txt sm" onclick="NOTICE='';paintSync()">Close</button></div>`;
+  const s=SYNC;if(!s||s.id===SYNCCLOSED)return '';
+  const run=s.status==='running',err=s.status==='error';
+  if(!run&&Date.now()-new Date(s.finished_at||s.started_at)>120000)return ''; // old results are not shown again
+  const steps=s.steps.map((t,i)=>`<div class="ps ${t.state}"><div class=pc>${t.state==='done'?'✓':t.state==='active'?'<i class=spin></i>':t.state==='error'?'!':i+1}</div><div><b>${esc(t.label)}</b><span>${esc(t.detail||'')}</span></div></div>`).join('');
+  return `<div class=card id=pipe><div class=head><h2>${s.kind==='to'?'Sync to Tally':'Sync from Tally'}</h2><span class="pill ${run?'s-extracted':err?'bad':'ok'} status">${run?'In progress':err?'Stopped':'Complete'}</span></div>
+   <div class=pbar><i style="width:${s.percent}%"></i></div><div class=pipe>${steps}</div>
+   ${run?'<p class=muted style="margin:16px 0 0">Please wait until this finishes. Both Sync buttons are locked meanwhile.</p>':''}
+   ${err?`<div class="note bad" style="margin:16px 0 0">${esc(s.message||'The sync stopped.')}</div>`:''}${s.status==='done'?syncSummary(s):''}
+   ${run?'':`<div class=row style="margin-top:16px">${err?`<button class="btn pri sm" onclick="retrySync('${s.kind}',${s.id})">Try again</button>`:''}<button class="btn sm" onclick="closeSync(${s.id})">Close</button></div>`}</div>`;
+}
+function paintSync(){
+  const p=$('#syncpanel');if(p)p.innerHTML=syncPanelHtml();
+  const busy=syncBusy(),n=counts(),to=$('[data-sync=to]'),fr=$('[data-sync=from]');
+  if(to){to.disabled=busy;to.textContent=busy&&SYNC.kind==='to'?'Syncing to Tally…':'Sync to Tally'+(n.approved&&!busy?` (${n.approved})`:'')}
+  if(fr){fr.disabled=busy;fr.textContent=busy&&SYNC.kind==='from'?'Reading Tally…':'Sync from Tally'}
+}
+function syncError(e){ // the server refused to start: the Tally program is off, or TallyPrime is closed. Say so on the page.
+  if(e.code==='agent_offline'||e.code==='tally_closed'){NOTICE=e.message;NOTICEBAD=true;SYNC=null;paintSync();return}
+  fail(e);loadSync().then(paintSync).catch(()=>{});
+}
+function retrySync(kind,id){closeSync(id);if(kind==='to')syncNow();else pullNow()}
+async function syncNow(){
+  if(syncBusy())return;
+  try{
+    const r=await api('/sync',{method:'POST'});
+    if(!r.queued){ NOTICEBAD=false; // nothing approved: say so clearly, right on the page (no popup)
+      const n=counts();
+      NOTICE=r.orders_not_postable?`Only purchase / sales orders are approved. Orders are kept here for review and are not posted to Tally; only bills and invoices are.`
+        :n.review?`Nothing to sync yet: no bills or invoices are approved. You have ${n.review} document${n.review>1?'s':''} waiting for review. Open one and press Approve first.`
+        :`Nothing to sync yet: no bills or invoices are approved.`;
+      SYNC=null;paintSync();return}
+    NOTICE='';SYNCCLOSED=0;await loadSync();paintSync();
+  }catch(e){syncError(e)}
+}
+async function pullNow(){
+  if(syncBusy())return;
+  try{await api('/pull',{method:'POST'});NOTICE='';SYNCCLOSED=0;await loadSync();paintSync()}
+  catch(e){syncError(e)}
+}
+
+/* ---------- one document ---------- */
+async function review(id){
+  const my=RT;
+  const d=await api('/documents/'+id);if(my!==RT)return;
+  const e=d.extracted||{},pdf=(d.filename||'').toLowerCase().endsWith('.pdf'),locked=['queued','synced'].includes(d.status);
+  const fu=d.source==='tally'?'':await signed('/api/documents/'+d.id+'/file');if(my!==RT)return;
+  const file=d.source==='tally'?'<div class=head><h2>Typed directly in Tally</h2></div><p class=sub>This came from Tally, so there is no file. It follows Tally if the entry changes.</p>'
+    :pdf?`<iframe src="${fu}"></iframe>`:/\.(png|jpe?g|webp)$/i.test(d.filename)?`<img class=pv src="${fu}">`:`<a href="${fu}" target="_blank" rel="noopener">Open the original file</a>`;
+  const back=`<button class="hb o" onclick="backToList()">← All documents</button>`;
+  if(d.status==='new'){
+    $('#m').innerHTML=page({eyebrow:'Review document',title:'Reading…',lead:'The AI is reading this file. The fields fill in by themselves in a few seconds.',acts:back,body:`<div class=card>${file}</div>`});
+    setTimeout(()=>{if(OPEN===id&&TAB==='docs')review(id).catch(()=>{})},3000);return}
+  const F=(k,l,t='text')=>`<label>${l}</label><input data-k="${k}" type="${t}" value="${esc(e[k]??'')}" ${locked?'disabled':''}>`;
+  const dv=d.dup_voucher,dup=d.tally_state==='possible_duplicate'&&dv?`<div class="note bad"><b>Is this already in Tally?</b><br>Tally has a ${esc(dv.vch_type)} for ${esc(dv.party)}, ${money(dv.amount)}, dated ${esc(dv.vch_date)}.<div class=row style="margin-top:12px"><button class="btn good sm" onclick=confirmDup(${d.id})>Yes, it is the same</button><button class="btn sm" onclick=forcePost(${d.id})>No, post it anyway</button></div></div>`:'';
+  const warns=(d.warnings||[]).length?`<div class=note><b>Please check:</b><ul>${d.warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul></div>`:'';
+  const items=e.items||[];
+  $('#m').innerHTML=page({eyebrow:'Review document',title:`${esc(e.party_name||d.filename)}<span class=hchip>${SL[d.status]||d.status}</span>`,lead:esc(d.filename),acts:back,body:`<div class=cols><div>
+    ${dup}${d.status==='synced'?`<div class="note ok">This is in Tally. ${esc(d.tally_result||'')}</div>`:''}${d.error?`<div class="note bad">${esc(d.error)}</div>`:''}${warns}
+    <div class=card><div class=form><label>Type</label><select data-k=doc_type ${locked?'disabled':''}>${Object.entries(TYPES).map(([k,l])=>`<option value=${k} ${e.doc_type===k?'selected':''}>${l}</option>`).join('')}</select>
+     ${F('party_name','Party')}${F('number','Number')}${F('date','Date (YYYY-MM-DD)')}${F('total','Total','number')}</div>
+     <details><summary>More details</summary><div class=form>${F('party_gstin','Party GSTIN')}${F('own_gstin','Our GSTIN')}${F('taxable_value','Taxable value','number')}${F('cgst','CGST','number')}${F('sgst','SGST','number')}${F('igst','IGST','number')}${F('cess','Cess','number')}${F('round_off','Round off','number')}${F('currency','Currency')}${F('due_date','Due date')}${F('reference_no','Reference / PO no.')}${F('payment_terms','Payment terms')}${F('party_address','Party address')}</div></details>
+     <div class=tag style="margin-bottom:6px">Items</div><table id=items style="margin:0 0 18px"><tr><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>
+      ${items.map((i,n)=>`<tr data-i="${n}"><td><input data-ik=description value="${esc(i.description??'')}" ${locked?'disabled':''}>${['hsn','unit','discount','gst_rate'].map(k=>`<input type=hidden data-ik=${k} value="${esc(i[k]??'')}">`).join('')}</td>${['qty','rate','amount'].map(k=>`<td><input data-ik=${k} value="${esc(i[k]??'')}" ${locked?'disabled':''}></td>`).join('')}</tr>`).join('')||'<tr><td colspan=4 class=muted>No items found</td></tr>'}</table>
+     ${locked?'':`<div class=row><button class="btn good" onclick=approve(${d.id})>Approve</button><button class="btn txt" onclick=rejectDoc(${d.id})>Not a bill</button></div>
+      <div class=row style="margin-top:10px"><button class="btn txt sm" onclick=saveDoc(${d.id})>Save changes</button><button class="btn txt sm" onclick=retry(${d.id})>Read again with AI</button></div>`}
+    </div></div>
+    <div class=card>${file}</div></div>`})}
+async function collect(id){const d=await api('/documents/'+id);const e={...(d.extracted||{})};
+  document.querySelectorAll('[data-k]').forEach(el=>{const k=el.dataset.k;e[k]=el.type==='number'?Number(el.value||0):el.value||null});
+  e.items=[...document.querySelectorAll('#items tr[data-i]')].map(tr=>{const o={};tr.querySelectorAll('[data-ik]').forEach(i=>{const k=i.dataset.ik;o[k]=['qty','rate','discount','amount','gst_rate'].includes(k)?Number(i.value||0):i.value});return o});
+  return e}
+async function saveDoc(id){try{const r=await api('/documents/'+id,{method:'PUT',body:await collect(id)});toast(r.warnings.length?'Saved. Check: '+r.warnings.join(' | '):'Saved.','ok');show()}catch(x){fail(x)}}
+async function approve(id){try{await api('/documents/'+id,{method:'PUT',body:await collect(id)});await api('/documents/'+id+'/approve',{method:'POST'});toast('Approved. Press Sync to Tally when you are ready.','ok');OPEN=null;nav('replace')}catch(x){fail(x)}}
+async function rejectDoc(id){try{await api('/documents/'+id+'/reject',{method:'POST'});OPEN=null;nav('replace')}catch(x){fail(x)}}
+async function retry(id){try{await api('/documents/'+id+'/retry',{method:'POST'});show()}catch(x){fail(x)}}
+async function confirmDup(id){try{await api('/documents/'+id+'/confirm-duplicate',{method:'POST'});toast('Linked to the entry in Tally. Nothing was posted twice.','ok');OPEN=null;nav('replace')}catch(x){fail(x)}}
+async function forcePost(id){if(!confirm('Post this to Tally even though a similar entry exists?'))return;try{await api('/documents/'+id+'/force-post',{method:'POST'});toast('It will be posted.','ok');OPEN=null;nav('replace')}catch(x){fail(x)}}
+
+/* ---------- Tally check ---------- */
+async function match(){
+  const my=RT;
+  const r=await api('/match');await loadSync();if(my!==RT)return;
+  const a=r.agent||{},s=r.summary,seen=a.agent_last_seen?(Date.now()-new Date(a.agent_last_seen))/1000:null;
+  const bad=s.mismatch+s.missing_in_tally+s.deleted_in_tally+s.not_sent;
+  let msg='';
+  if(a.sync_stage==='checking')msg='Waiting for the Tally program to read Tally first. Make sure it is running and your company is open in Tally.';
+  else if(seen===null||seen>60)msg='The Tally program is not running. Start TallySync-Agent.exe on the Tally computer, then press Sync from Tally.';
+  else if(!a.last_pull_at)msg='Tally has not been read yet. Press Sync from Tally.';
+  const ev=await api('/events');if(my!==RT)return;
+  $('#m').innerHTML=page({eyebrow:'Compare with Tally',title:'Tally check',lead:'Your documents compared with what is in Tally. Entries already here are matched, never duplicated.',
+   acts:fromButton(true)+`<button class="hb o" onclick="show()">Refresh</button>`,
+   body:`<div id=syncpanel>${syncPanelHtml()}</div>${msg?`<div class="note">${msg}</div>`:''}
+   ${r.rows.length?(bad?`<div class="note">${bad} difference${bad>1?'s':''} found.</div>`:`<div class="note ok">Everything matches (${s.matched}).</div>`):''}
+   <div class=sum>${[['matched',s.matched],['mismatch',s.mismatch],['missing_in_tally',s.missing_in_tally],['not_sent',s.not_sent],['deleted_in_tally',s.deleted_in_tally],['missing_in_software',s.missing_in_software]].filter(([k,v])=>v||k==='matched').map(([k,v])=>`<div class=${k}><b>${v}</b>${lab(k)}</div>`).join('')}</div>
+   <div class=card style="padding:0"><table><tr><th>Result</th><th>Party</th><th>Number</th><th>Here</th><th>Tally</th></tr>
+   ${r.rows.map(x=>`<tr><td class="${x.result}">${lab(x.result)}</td><td>${esc(x.party)}${x.issues&&x.issues.length?`<div class=muted style="font-size:13px">${esc(x.issues.join('; '))}</div>`:''}</td><td>${esc(x.number)}</td><td>${x.doc_amount!=null?money(x.doc_amount):'—'}</td><td>${x.tally_amount!=null?money(x.tally_amount):'—'}</td></tr>`).join('')||'<tr><td colspan=5 class=muted style="padding:28px;text-align:center">Nothing to compare yet. Approve documents, press Sync to Tally, then Sync from Tally.</td></tr>'}</table></div>
+   <div class=card><div class=head><h2>Recent changes</h2></div><p class=sub>What the sync changed by itself. Nothing is changed silently.</p>
+   ${ev.slice(0,8).map(x=>`<p style="margin:0 0 12px"><span class=tag>${new Date(x.at).toLocaleString()}</span><br>${esc(x.detail)}</p>`).join('')||'<span class=muted>No changes yet.</span>'}</div>`});
+  paint();
+}
+
+/* ---------- Setup: three short steps ---------- */
+async function setup(){
+  const my=RT;
+  const [mb]=await Promise.all([api('/mailboxes'),refreshStats().catch(()=>{})]);ME=await api('/me');if(my!==RT)return;
+  const active=mb.filter(r=>r.active),o=ME.org;
+  const tick=ok=>`<span class="pill ${ok?'ok':'s-extracted'} status">${ok?'Done':'To do'}</span>`;
+  $('#m').innerHTML=page({eyebrow:'One-time setup',title:'Setup',lead:'Three short steps, done once. After that everything runs by itself.',body:`
+  <div class=card><div class=head><div class=step><div class="n">1</div><div><div class=tag>Step 1</div><h2>Connect your email</h2></div></div>${tick(active.length>0)}</div>
+   <p class=sub>The Gmail inbox that receives your bills. Mail is only read, never changed or deleted.</p>
+   ${active.map(r=>`<div class=row style="margin-bottom:10px"><b>${esc(r.email)}</b>${r.last_error?`<span class="pill bad">${esc(r.last_error)}</span>`:'<span class="pill ok">Connected</span>'}<span class=muted>checked ${ago(r.last_checked)}</span><button class="btn txt sm" onclick="api('/mailboxes/${r.id}',{method:'DELETE'}).then(setupAgain).catch(fail)">Remove</button></div>`).join('')}
+   <details ${active.length?'':'open'}><summary>${active.length?'Add another inbox':'Connect an inbox'}</summary>
+    <p class=muted style="margin-top:0">In your Google account turn on 2-Step Verification, then create an <b>App password</b> (Security → App passwords) and paste it here.</p>
+    <div class=form><label>Gmail address</label><input id=mb_e><label>App password</label><input id=mb_p type=password></div>
+    <button class="btn pri" onclick="api('/mailboxes',{method:'POST',body:{email:mb_e.value,app_password:mb_p.value,imap_host:'imap.gmail.com'}}).then(()=>{toast('Connected. New mail is picked up automatically.','ok');setupAgain()}).catch(fail)">Connect</button></details></div>
+  <div class=card><div class=head><div class=step><div class="n">2</div><div><div class=tag>Step 2</div><h2>Tell us who you are</h2></div></div>${tick(!!o.own_gstin)}</div>
+   <p class=sub>So bills where you are the buyer become purchases, and invoices you issue become sales.</p>
+   <div class=form><label>Company name</label><input id=on value="${esc(o.own_name)}"><label>Your GSTIN</label><input id=og value="${esc(o.own_gstin)}" placeholder="27AABCS1234D1Z5"><label>Most documents are</label><select id=dr><option value=buyer ${o.default_role!=='seller'?'selected':''}>Purchases (we are usually the buyer)</option><option value=seller ${o.default_role==='seller'?'selected':''}>Sales (we are usually the seller)</option></select></div>
+   <button class="btn pri" onclick="api('/org',{method:'PUT',body:{own_name:on.value,own_gstin:og.value,default_role:dr.value}}).then(()=>{toast('Saved. Applies to new documents.','ok');setupAgain()}).catch(fail)">Save</button></div>
+  <div class=card><div class=head><div class=step><div class="n">3</div><div><div class=tag>Step 3</div><h2>Connect Tally</h2></div></div>${tick(!!o.agent_last_seen)}</div>
+   <p class=sub>One small program on the computer where Tally runs. You install it once: after that it starts by itself with Windows and runs quietly in the background. You never open it again.</p>
+   <div class=row style="margin-bottom:20px"><button class="btn pri" onclick="openSigned('/api/agent-download')">Download the Tally program</button><span id=agent-pill class="pill ${agentOn()?'ok':'s-extracted'}">${agentOn()?'Connected now':'Not connected yet'}</span></div>
+   <div class=steps style="margin-bottom:20px">
+    <div class=step><div class=n>a</div><div>Open the downloaded file <b>TallySync-Agent.exe</b> once. It installs itself and closes. If Windows says “protected your PC”, click <b>More info → Run anyway</b>.</div></div>
+    <div class=step><div class=n>b</div><div>In Tally, once: <b>F1 Help → Settings → Connectivity → Client/Server</b>, act as <b>Server</b> on port <b>9000</b>, and open your company.</div></div>
+    <div class=step><div class=n>c</div><div>That is all. The badge above turns to <b>Connected now</b>, and it reconnects by itself after every restart of the computer.</div></div></div>
+   <div class=form><label>Company name in Tally</label><input id=tc value="${esc(o.tally_company)}" placeholder="Exactly as shown in Tally (optional)"></div>
+   <button class=btn onclick="api('/org',{method:'PUT',body:{tally_company:tc.value}}).then(()=>toast('Saved.','ok')).catch(fail)">Save company name</button></div>
+  <details><summary>Advanced</summary><div class=card><div class=head><h2>Tally program</h2></div><p class=sub>It lives in <code>%LOCALAPPDATA%\\TallySync</code> and starts with Windows (per user, no administrator needed). To remove it completely: press <b>Win + R</b>, paste <code>%LOCALAPPDATA%\\TallySync\\TallySync-Agent.exe --uninstall</code> and press Enter. To update, download it again and open it: the old copy is replaced.<br>The log is <code>agent.log</code> in the same folder. <a href="#" onclick="openSigned('/api/agent-config');return false">Settings file</a> · <a href="${BASE}/downloads/TallySync-Agent.exe">Program without settings</a>${CFG.STUDIO_URL?` · <a href="${esc(CFG.STUDIO_URL)}" target="_blank" rel="noopener">Database (Supabase Studio)</a>`:''} (for IT: put the settings file next to it).</p></div><div class=card><div class=head><h2>AI</h2></div><p class=sub>Documents are read with free models only: <code>${esc(ME.ai_model)}</code> ${ME.ai_ready?'<span class="pill ok">key set</span>':'<span class="pill bad">key missing</span>'}<br>On Google's free tier, documents may be used to improve their products. Keep billing off for the key.</p></div></details>`});
+  paint();
+}
+const setupAgain=()=>{if(TAB==='setup')show()};
+
+route();history.replaceState({d:0},'',hashFor());
+window.addEventListener('popstate',()=>{route();if(ME)show()});
+boot();
+setInterval(()=>{ if(!ME||document.hidden)return;
+  const ae=document.activeElement,typing=ae&&['INPUT','SELECT','TEXTAREA'].includes(ae.tagName);
+  refreshStats().then(()=>{paint();if(!typing&&!OPEN&&TAB==='docs')show()}).catch(()=>{});
+},15000);
+</script></body></html>

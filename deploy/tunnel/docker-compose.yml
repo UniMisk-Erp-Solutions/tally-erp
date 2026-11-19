@@ -1,0 +1,15 @@
+# Cloudflare Tunnel connector. Run on the server, on the same Docker network as TallySync and Supabase (Kong).
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: tallysync-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    networks:
+      - supabase_net
+networks:
+  supabase_net:
+    external: true
+    name: ${SUPABASE_NETWORK}
