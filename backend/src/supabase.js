@@ -54,9 +54,16 @@ async function ensureBucket() {
   bucketReady = true;
 }
 const objPath = (p) => p.split('/').map(encodeURIComponent).join('/');
+const MIME = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', xls: 'application/vnd.ms-excel', csv: 'text/csv', txt: 'text/plain', xml: 'application/xml' };
+/** The real content type (Studio previews and downloads depend on it): the one we were given, else from the file extension. */
+function mimeFor(name, given) {
+  if (given && given !== 'application/octet-stream') return given;
+  return MIME[(String(name).split('.').pop() || '').toLowerCase()] || 'application/octet-stream';
+}
 async function putFile(storagePath, buf, mime) {
   await ensureBucket();
-  const r = await call(`/storage/v1/object/${BUCKET}/${objPath(storagePath)}`, { method: 'POST', headers: { 'Content-Type': mime || 'application/octet-stream', 'x-upsert': 'true' }, body: buf });
+  mime = mimeFor(storagePath, mime);
+  const r = await call(`/storage/v1/object/${BUCKET}/${objPath(storagePath)}`, { method: 'POST', headers: { 'Content-Type': mime, 'Cache-Control': 'max-age=3600', 'x-upsert': 'true' }, body: buf });
   if (!r.ok) throw new Error('Storage upload failed: ' + (await r.text()).slice(0, 200));
 }
 async function getFile(storagePath) {
@@ -73,4 +80,4 @@ async function loadFile(doc) {
   return null;
 }
 
-module.exports = { enabled, passwordLogin, ensureAuthUser, findAuthUser, setAuthPassword, deleteAuthUser, ensureBucket, putFile, getFile, loadFile, BUCKET };
+module.exports = { mimeFor, enabled, passwordLogin, ensureAuthUser, findAuthUser, setAuthPassword, deleteAuthUser, ensureBucket, putFile, getFile, loadFile, BUCKET };
