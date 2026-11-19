@@ -45,6 +45,7 @@ async function storeAttachment(orgId, mailboxId, source, ref, sender, subject, f
     fs.rmSync(file, { force: true });
     return null;
   }
+  await q('insert into document_files(doc_id,data) values($1,$2) on conflict (doc_id) do nothing', [row.id, content]);
   enqueue(row.id);
   return row.id;
 }

@@ -106,3 +106,9 @@ create index if not exists sync_runs_org on sync_runs(org_id, id desc);
 -- does TallyPrime itself answer on the Tally computer? (reported by the Tally program on every poll)
 alter table orgs add column if not exists tally_ok boolean;
 alter table orgs add column if not exists tally_checked_at timestamptz;
+
+-- Original files (PDF / image / sheet) live in the database, so everything is in Supabase. data_dir files are only a cache.
+create table if not exists document_files (
+  doc_id int primary key references documents(id) on delete cascade,
+  data bytea not null
+);

@@ -286,6 +286,10 @@ async function processDocument(docId) {
   const doc = await q1('select * from documents where id=$1', [docId]);
   if (!doc) return;
   try {
+    if (doc.file_path && !fs.existsSync(doc.file_path)) { // the copy on disk is only a cache: restore it from the database
+      const f = await q1('select data from document_files where doc_id=$1', [doc.id]);
+      if (f) { fs.mkdirSync(path.dirname(doc.file_path), { recursive: true }); fs.writeFileSync(doc.file_path, f.data); }
+    }
     const raw = await callModel(doc.file_path);
     const org = await q1('select own_name, own_gstin, default_role from orgs where id=$1', [doc.org_id]);
     const identityWarning = applyIdentity(raw, org);

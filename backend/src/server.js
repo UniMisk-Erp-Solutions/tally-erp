@@ -246,7 +246,9 @@ app.get('/api/documents/:id/file', currentUser, wrap(async (req, res) => {
   if (d.source === 'tally' || !d.file_path) throw httpErr(404, 'This entry was typed directly in Tally, so there is no file');
   if (d.mime) res.type(d.mime);
   res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(d.filename)}`);
-  res.sendFile(path.resolve(d.file_path));
+  const f = await q1('select data from document_files where doc_id=$1', [d.id]);
+  if (f) return res.send(f.data);
+  res.sendFile(path.resolve(d.file_path)); // older files not yet copied into the database
 }));
 
 app.put('/api/documents/:id', currentUser, express.json({ limit: '2mb' }), wrap(async (req, res) => {
