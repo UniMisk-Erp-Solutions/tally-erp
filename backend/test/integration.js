@@ -277,6 +277,8 @@ const tallyDocs = () => q("select id, extracted->>'number' as number from docume
     console.error('FAILED:', e.stack.split('\n').slice(0, 4).join('\n'));
     process.exitCode = 1;
   } finally {
+    const sbm = require('/srv/src/supabase.js');
+    for (const u of await q('select auth_id from users where org_id=$1 and auth_id is not null', [orgId])) await sbm.deleteAuthUser(u.auth_id).catch(() => {});
     await q('delete from orgs where id=$1', [orgId]); // cascades to documents, vouchers, events, users
     console.log('temporary test data removed');
     process.exit(process.exitCode || 0);

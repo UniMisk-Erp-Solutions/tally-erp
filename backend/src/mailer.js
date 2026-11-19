@@ -1,4 +1,5 @@
 'use strict';
+const sb = require('./supabase');
 // IMAP IDLE listener: one connection per mailbox. Read-only: never marks mail as read, moves or deletes it.
 const fs = require('fs');
 const path = require('path');
@@ -45,7 +46,15 @@ async function storeAttachment(orgId, mailboxId, source, ref, sender, subject, f
     fs.rmSync(file, { force: true });
     return null;
   }
-  await q('insert into document_files(doc_id,data) values($1,$2) on conflict (doc_id) do nothing', [row.id, content]);
+  try {
+    if (!sb.enabled()) throw new Error('Supabase is not configured');
+    const sp = `${orgId}/${row.id}_${safe}`;
+    await sb.putFile(sp, content, mime);
+    await q('update documents set storage_path=$1 where id=$2', [sp, row.id]);
+  } catch (e) { // never lose a file: keep a copy in the database instead
+    console.error('storage upload failed, keeping the file in the database:', e.message);
+    await q('insert into document_files(doc_id,data) values($1,$2) on conflict (doc_id) do nothing', [row.id, content]);
+  }
   enqueue(row.id);
   return row.id;
 }

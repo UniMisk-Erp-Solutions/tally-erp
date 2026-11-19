@@ -6,6 +6,7 @@ const path = require('path');
 const express = require('express');
 const multer = require('multer');
 const core = require('./core');
+const sb = require('./supabase');
 const { cfg, q, q1 } = core;
 const extractor = require('./extractor');
 const mailer = require('./mailer');
@@ -95,12 +96,22 @@ const agentOrg = wrap(async (req, res, next) => {
 const loginFails = new Map();
 const clientIp = (req) => String(req.headers['cf-connecting-ip'] || req.ip || '');
 const recentFails = (key) => { const now = Date.now(); const a = (loginFails.get(key) || []).filter((t) => now - t < 15 * 60000); loginFails.set(key, a); return a; };
+/** Passwords live in Supabase Auth. A user that is not there yet (older account) is moved over at the first correct sign-in. */
+async function checkPassword(u, password) {
+  if (!sb.enabled()) return core.verifyPassword(password, u.salt, u.pw_hash);
+  if (u.auth_id) return (await sb.passwordLogin(u.email, password)) === u.auth_id;
+  if (!core.verifyPassword(password, u.salt, u.pw_hash)) return false;
+  const id = await sb.ensureAuthUser(u.email, password, { org_id: u.org_id });
+  await q('update users set auth_id=$1 where id=$2', [id, u.id]);
+  u.auth_id = id;
+  return true;
+}
 app.post('/api/login', express.json(), wrap(async (req, res) => {
   const { email = '', password = '' } = req.body || {};
   const idKey = clientIp(req) + '|' + String(email).toLowerCase(), ipKey = clientIp(req);
   if (recentFails(idKey).length >= 8 || recentFails(ipKey).length >= 40) throw Object.assign(httpErr(429, 'Too many wrong attempts. Please wait 15 minutes and try again.'), { code: 'rate_limited' });
   const u = await q1('select * from users where email=$1', [String(email).toLowerCase()]);
-  if (!u || !core.verifyPassword(String(password), u.salt, u.pw_hash)) {
+  if (!u || !(await checkPassword(u, String(password)))) {
     recentFails(idKey).push(Date.now()); recentFails(ipKey).push(Date.now());
     throw httpErr(401, 'Wrong email or password');
   }
@@ -147,10 +158,10 @@ app.get('/api/events', currentUser, wrap(async (req, res) => {
 }));
 app.post('/api/change-password', currentUser, express.json(), wrap(async (req, res) => {
   const { old_password = '', new_password = '' } = req.body || {};
-  if (!core.verifyPassword(String(old_password), req.user.salt, req.user.pw_hash)) throw httpErr(400, 'Current password is wrong');
+  if (!(await checkPassword(req.user, String(old_password)))) throw httpErr(400, 'Current password is wrong');
   if (String(new_password).length < 8) throw httpErr(400, 'New password must be at least 8 characters');
-  const { salt, hash } = core.hashPassword(String(new_password));
-  await q('update users set salt=$1, pw_hash=$2 where id=$3', [salt, hash, req.user.id]);
+  if (sb.enabled() && req.user.auth_id) await sb.setAuthPassword(req.user.auth_id, String(new_password));
+  else { const { salt, hash } = core.hashPassword(String(new_password)); await q('update users set salt=$1, pw_hash=$2 where id=$3', [salt, hash, req.user.id]); }
   res.json({ ok: true });
 }));
 
@@ -246,9 +257,9 @@ app.get('/api/documents/:id/file', currentUser, wrap(async (req, res) => {
   if (d.source === 'tally' || !d.file_path) throw httpErr(404, 'This entry was typed directly in Tally, so there is no file');
   if (d.mime) res.type(d.mime);
   res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(d.filename)}`);
-  const f = await q1('select data from document_files where doc_id=$1', [d.id]);
-  if (f) return res.send(f.data);
-  res.sendFile(path.resolve(d.file_path)); // older files not yet copied into the database
+  const data = await sb.loadFile(d);
+  if (!data) throw httpErr(404, 'The file is not available');
+  res.send(data);
 }));
 
 app.put('/api/documents/:id', currentUser, express.json({ limit: '2mb' }), wrap(async (req, res) => {
@@ -463,11 +474,13 @@ app.use((err, req, res, next) => { // JSON errors in the same shape the dashboar
 
 async function main() {
   await q(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
+  if (sb.enabled()) await sb.ensureBucket().catch((e) => console.error('storage bucket:', e.message));
   const { ADMIN_EMAIL, ADMIN_PASSWORD, ORG_NAME } = process.env;
   if (ADMIN_EMAIL && ADMIN_PASSWORD && !(await q1('select 1 from users limit 1'))) {
     const org = await q1('insert into orgs(name,agent_token) values($1,$2) returning id', [ORG_NAME || 'My Company', crypto.randomBytes(32).toString('base64url')]);
     const { salt, hash } = core.hashPassword(ADMIN_PASSWORD);
-    await q('insert into users(org_id,email,salt,pw_hash) values($1,$2,$3,$4)', [org.id, ADMIN_EMAIL.toLowerCase(), salt, hash]);
+    const authId = sb.enabled() ? await sb.ensureAuthUser(ADMIN_EMAIL.toLowerCase(), ADMIN_PASSWORD, { org_id: org.id }) : null;
+    await q('insert into users(org_id,email,salt,pw_hash,auth_id) values($1,$2,$3,$4,$5)', [org.id, ADMIN_EMAIL.toLowerCase(), salt, hash, authId]);
   }
   app.listen(cfg.PORT, '0.0.0.0', () => console.log(`TallySync listening on :${cfg.PORT}`));
   await mailer.startAll();

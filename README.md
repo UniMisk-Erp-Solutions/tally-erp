@@ -55,6 +55,12 @@ Public hostnames (in the tunnel's settings):
 
 3. Deploy. The API allows pages from `*.vercel.app` and `*.unimisk.com` (`ALLOWED_ORIGINS`); add your own domain there if you use one.
 
+## What lives in Supabase
+- **Database:** all tables in schema `public` of the `postgres` database (row-level security on, no public API access).
+- **Auth:** every user is a Supabase Auth user (`auth.users`); `public.users` links it to the company (`auth_id`). Passwords are checked by Supabase Auth.
+- **Storage:** original PDFs / images are in the private bucket `documents` (`<company id>/<document id>_<name>`).
+- **Edge Function:** `supabase/functions/tallysync-status` (copy it to the Supabase functions volume). Call it with the service key to get document counts and the last sync.
+
 ## Security notes
 - Login returns a signed, expiring token (14 days) kept in the browser; file previews and downloads use 30-minute links valid for one path only.
 - Wrong-password limit: 8 per account+address, 40 per address, per 15 minutes.

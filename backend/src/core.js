@@ -25,6 +25,9 @@ const cfg = {
   PORT: parseInt(env.PORT || '8100', 10),
   // Public address of this backend (what the Tally program and the Vercel page call), e.g. https://tally-api.unimisk.com
   PUBLIC_API_URL: (env.PUBLIC_API_URL || '').replace(/\/+$/, ''),
+  // Supabase gateway (Kong) reachable from this server, and its service key: used for Auth users and Storage files
+  SUPABASE_URL: (env.SUPABASE_URL || '').replace(/\/+$/, ''),
+  SUPABASE_SERVICE_KEY: env.SUPABASE_SERVICE_KEY || '',
   // Optional: where the Supabase Studio lives, shown as a link in Setup > Advanced
   STUDIO_URL: (env.STUDIO_URL || '').replace(/\/+$/, ''),
   // Web pages allowed to call this API from a browser. "*" matches one subdomain label / any port.
