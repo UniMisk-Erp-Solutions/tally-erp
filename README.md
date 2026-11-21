@@ -75,7 +75,7 @@ Dashboard → Setup → Connect Tally → "Download the Tally program". Open it 
 ## How syncing works
 - **Gmail → dashboard:** the IMAP listener downloads attachments; the AI decides if it is a PO / SO / bill.
 - **Sync to Tally:** approved documents are queued; the agent reads Tally first. Same invoice number already in Tally → marked synced, not posted. Same party + amount + date with another number → held as "possible duplicate" for you to decide.
-- **Sync from Tally:** vouchers typed in Tally become records (source "Tally"); already-matched ones are not duplicated; edits and deletions are followed.
+- **Automatic Tally sync:** while Tally is open and the Windows agent is running, it checks for changes every 60 seconds by default (`TALLY_AUTO_SYNC_SECONDS` can change this; minimum 15 seconds). New vouchers, edits, and deletions are reconciled into the dashboard. Tally must be open for the agent to read it; changes made while it is closed are picked up after it is reopened. Manual **Sync from Tally** remains available.
 
 ## Tests
 ```bash

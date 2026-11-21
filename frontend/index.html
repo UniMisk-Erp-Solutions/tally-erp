@@ -420,7 +420,7 @@ async function setup(){
    <div class=form><label>Company name</label><input id=on value="${esc(o.own_name)}"><label>Your GSTIN</label><input id=og value="${esc(o.own_gstin)}" placeholder="27AABCS1234D1Z5"><label>Most documents are</label><select id=dr><option value=buyer ${o.default_role!=='seller'?'selected':''}>Purchases (we are usually the buyer)</option><option value=seller ${o.default_role==='seller'?'selected':''}>Sales (we are usually the seller)</option></select></div>
    <button class="btn pri" onclick="api('/org',{method:'PUT',body:{own_name:on.value,own_gstin:og.value,default_role:dr.value}}).then(()=>{toast('Saved. Applies to new documents.','ok');setupAgain()}).catch(fail)">Save</button></div>
   <div class=card><div class=head><div class=step><div class="n">3</div><div><div class=tag>Step 3</div><h2>Connect Tally</h2></div></div>${tick(!!o.agent_last_seen)}</div>
-   <p class=sub>One small program on the computer where Tally runs. You install it once: after that it starts by itself with Windows and runs quietly in the background. You never open it again.</p>
+   <p class=sub>One small program on the computer where Tally runs. You install it once: after that it starts by itself with Windows and runs quietly in the background. While Tally is open, it checks for changes and updates this software automatically, usually within a minute.</p>
    <div class=row style="margin-bottom:20px"><button class="btn pri" onclick="openSigned('/api/agent-download')">Download the Tally program</button><span id=agent-pill class="pill ${agentOn()?'ok':'s-extracted'}">${agentOn()?'Connected now':'Not connected yet'}</span></div>
    <div class=steps style="margin-bottom:20px">
     <div class=step><div class=n>a</div><div>Open the downloaded file <b>TallySync-Agent.exe</b> once. It installs itself and closes. If Windows says “protected your PC”, click <b>More info → Run anyway</b>.</div></div>
@@ -438,6 +438,6 @@ window.addEventListener('popstate',()=>{route();if(ME)show()});
 boot();
 setInterval(()=>{ if(!ME||document.hidden)return;
   const ae=document.activeElement,typing=ae&&['INPUT','SELECT','TEXTAREA'].includes(ae.tagName);
-  refreshStats().then(()=>{paint();if(!typing&&!OPEN&&TAB==='docs')show()}).catch(()=>{});
+  refreshStats().then(()=>{paint();if(!typing&&(TAB==='docs'||TAB==='match'))show()}).catch(()=>{});
 },15000);
 </script></body></html>

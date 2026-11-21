@@ -41,6 +41,8 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 const httpErr = (code, msg) => Object.assign(new Error(msg), { status: code });
 const PULL_REQUESTS = new Set(); // org ids whose agent should export vouchers on next poll (manual / after a post)
 const PULL_RANGE = new Map(); // org id -> {start,end} covered by the pull we last asked for
+const LAST_TALLY_READ = new Map(); // org id -> last export request, including automatic reads
+const AUTO_TALLY_SYNC_MS = Math.max(15_000, (parseInt(process.env.TALLY_AUTO_SYNC_SECONDS, 10) || 60) * 1000);
 
 /**
  * Before starting a sync: is there anybody to do it? Refuses at once, with a clear message, when the Tally program is not
@@ -374,12 +376,16 @@ app.get('/api/agent/poll', agentOrg, wrap(async (req, res) => {
     catch (e) { await q("update documents set status='error', error=$1 where id=$2", [String(e.message).slice(0, 300), d.id]); }
   }
   const out = { jobs, pull: null, company: req.org.tally_company };
-  // Tally is read only on request: "Sync from Tally", or the check that "Sync to Tally" does before posting.
+  // Periodically read Tally while it is reachable so edits/deletions appear without a manual sync.
   const range = fyRange();
   PULL_RANGE.set(req.org.id, range);
   const exportXml = tallyxml.exportRequest(req.org.tally_company, range.start, range.end);
-  if (!tallyClosed && (PULL_REQUESTS.delete(req.org.id) || checking)) { // while checking, keep asking until the read arrives
+  const requested = !tallyClosed && PULL_REQUESTS.delete(req.org.id);
+  const activeRun = !requested && !checking ? await syncrun.running(req.org.id) : null;
+  const autoDue = !activeRun && Date.now() - (LAST_TALLY_READ.get(req.org.id) || 0) >= AUTO_TALLY_SYNC_MS;
+  if (!tallyClosed && (requested || checking || autoDue)) { // while checking, keep asking until the read arrives
     out.pull = exportXml;
+    LAST_TALLY_READ.set(req.org.id, Date.now());
     await syncrun.onPullHanded(req.org.id);
   }
   res.json(out);
