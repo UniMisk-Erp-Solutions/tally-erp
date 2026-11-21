@@ -381,8 +381,8 @@ app.get('/api/agent/poll', agentOrg, wrap(async (req, res) => {
   PULL_RANGE.set(req.org.id, range);
   const exportXml = tallyxml.exportRequest(req.org.tally_company, range.start, range.end);
   const requested = !tallyClosed && PULL_REQUESTS.delete(req.org.id);
-  const activeRun = !requested && !checking ? await syncrun.running(req.org.id) : null;
-  const autoDue = !activeRun && Date.now() - (LAST_TALLY_READ.get(req.org.id) || 0) >= AUTO_TALLY_SYNC_MS;
+  const activeRun = !requested && !checking ? await syncrun.current(req.org.id) : null;
+  const autoDue = (!activeRun || activeRun.status !== 'running') && Date.now() - (LAST_TALLY_READ.get(req.org.id) || 0) >= AUTO_TALLY_SYNC_MS;
   if (!tallyClosed && (requested || checking || autoDue)) { // while checking, keep asking until the read arrives
     out.pull = exportXml;
     LAST_TALLY_READ.set(req.org.id, Date.now());
