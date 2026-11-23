@@ -21,7 +21,7 @@ const xml = (vs) =>
   '</COLLECTION></DATA></BODY></ENVELOPE>';
 
 const agent = { Authorization: 'Bearer ' + token };
-const poll = async () => (await fetch(BASE + '/api/agent/poll', { headers: agent })).json();
+const poll = async () => (await fetch(BASE + '/api/agent/poll?tally=1', { headers: agent })).json();
 const upload = async (body) => { const r = await fetch(BASE + '/api/agent/vouchers', { method: 'POST', headers: { ...agent, 'Content-Type': 'text/xml' }, body }); assert.strictEqual(r.status, 200); return r.json(); };
 const pull = (vs) => upload(xml(vs));
 const user = (path, method = 'POST') => fetch(BASE + path, { method, headers: { cookie } }).then((r) => r.json());
@@ -242,6 +242,16 @@ const tallyDocs = () => q("select id, extracted->>'number' as number from docume
     ok('a request nobody picks up is stopped after about 25 seconds, not minutes');
 
     p = await poll(); assert.strictEqual(p.watch, undefined); ok('no live-watch request is ever sent (sync is button-driven only)');
+
+    // ---- an old Tally program (never says whether TallyPrime is open) is told to update, at once
+    await q('update orgs set tally_ok=null, tally_checked_at=null where id=$1', [orgId]);
+    let t0 = Date.now(); let old = await raw('/api/pull'); let oj = await old.json();
+    assert.strictEqual(old.status, 409); assert.strictEqual(oj.code, 'agent_outdated'); assert.ok(Date.now() - t0 < 2000);
+    ok('an old Tally program is refused at once with "download the new one" instead of a long wait');
+    await pollT(0); t0 = Date.now(); old = await raw('/api/pull'); oj = await old.json();
+    assert.strictEqual(old.status, 409); assert.strictEqual(oj.code, 'tally_closed'); assert.ok(Date.now() - t0 < 2000);
+    ok('TallyPrime closed: Sync from Tally says so instantly (under 2 seconds)');
+    await pollT(1);
 
     // ---- public access: token login, CORS, signed links, rate limit
     const lj = await (await fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'pw-test-1234' }) })).json();

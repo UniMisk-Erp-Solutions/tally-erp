@@ -54,7 +54,10 @@ async function preflight(orgId) {
   if (age(o.agent_last_seen) > 60) {
     throw Object.assign(httpErr(409, 'The Tally program is not running on the Tally computer, so nothing can be synced. Start it (the light at the top right turns green), or see Setup if it is not installed yet.'), { code: 'agent_offline' });
   }
-  if (o.tally_ok === false && age(o.tally_checked_at) < 30) {
+  if (age(o.tally_checked_at) > 20) { // an older Tally program never says whether TallyPrime is open, so a closed Tally would only show up as a long wait
+    throw Object.assign(httpErr(409, 'The Tally program on the Tally computer is an old version and cannot tell whether TallyPrime is open. Open Setup, click "Download the Tally program" and open the downloaded file once (it replaces the old one). Then click Sync again.'), { code: 'agent_outdated' });
+  }
+  if (o.tally_ok === false) {
     throw Object.assign(httpErr(409, 'TallyPrime is not open on the Tally computer. Open TallyPrime and your company, then click Sync again.'), { code: 'tally_closed' });
   }
 }
