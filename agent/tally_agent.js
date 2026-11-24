@@ -1,4 +1,5 @@
 'use strict';
+const net = require('net');
 /*
  * TallySync agent (Windows). Download once, double-click once:
  *   - installs itself into %LOCALAPPDATA%\TallySync
@@ -102,8 +103,26 @@ async function sendExport(xml, why) {
   if (!u.ok) throw new Error(`server answered ${u.status}`);
 }
 /** Does TallyPrime itself answer on this computer? (Open, with its connection switched on.) */
+/** Is something listening on Tally's port? A plain connection test: it works even while Tally is busy and slow to answer HTTP. */
+function tcpOpen(host, port, ms) {
+  return new Promise((resolve) => {
+    const s = net.connect({ host, port });
+    let done = false;
+    const end = (v) => { if (!done) { done = true; s.destroy(); resolve(v); } };
+    s.setTimeout(ms, () => end(false));
+    s.on('connect', () => end(true));
+    s.on('error', () => end(false));
+  });
+}
 async function tallyReachable() {
-  try { await fetch(TALLY, { method: 'GET', signal: AbortSignal.timeout(1500) }); return true; } catch { return false; }
+  let host = 'localhost', port = 9000;
+  try { const u = new URL(TALLY); host = u.hostname; port = Number(u.port) || 80; } catch { /* keep the defaults */ }
+  const hosts = host === 'localhost' ? ['127.0.0.1', '::1'] : [host]; // some PCs resolve "localhost" to IPv6, some to IPv4
+  for (let attempt = 0; attempt < 2; attempt++) { // two tries, so one unlucky moment does not flip the status
+    for (const h of hosts) if (await tcpOpen(h, port, 1500)) return true;
+    if (!attempt) await sleep(300);
+  }
+  return false;
 }
 async function loop() {
   log('agent started ->', SERVER, '| tally:', TALLY);

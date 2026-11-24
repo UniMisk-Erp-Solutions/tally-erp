@@ -54,11 +54,11 @@ async function preflight(orgId) {
   if (age(o.agent_last_seen) > 60) {
     throw Object.assign(httpErr(409, 'The Tally program is not running on the Tally computer, so nothing can be synced. Start it (the light at the top right turns green), or see Setup if it is not installed yet.'), { code: 'agent_offline' });
   }
-  if (age(o.tally_checked_at) > 20) { // an older Tally program never says whether TallyPrime is open, so a closed Tally would only show up as a long wait
+  if (!o.tally_checked_at || age(o.tally_checked_at) - age(o.agent_last_seen) > 20) { // an older Tally program never says whether TallyPrime is open, so a closed Tally would only show up as a long wait
     throw Object.assign(httpErr(409, 'The Tally program on the Tally computer is an old version and cannot tell whether TallyPrime is open. Open Setup, click "Download the Tally program" and open the downloaded file once (it replaces the old one). Then click Sync again.'), { code: 'agent_outdated' });
   }
   if (o.tally_ok === false) {
-    throw Object.assign(httpErr(409, 'TallyPrime is not open on the Tally computer. Open TallyPrime and your company, then click Sync again.'), { code: 'tally_closed' });
+    throw Object.assign(httpErr(409, 'TallyPrime is not open on the Tally computer, or its connection is off. Open TallyPrime and your company. Once: F1 Help > Settings > Connectivity > Client/Server, set TallyPrime to act as Server on port 9000. Then click Sync again.'), { code: 'tally_closed' });
   }
 }
 
@@ -375,14 +375,14 @@ app.get('/api/agent/poll', agentOrg, wrap(async (req, res) => {
   const checking = !tallyClosed && req.org.sync_stage === 'checking'; // pre-post check running: hand out no jobs until Tally has been read
   const docs = checking || tallyClosed ? [] : await q("select id, extracted from documents where org_id=$1 and status='queued' order by id limit 20", [req.org.id]);
   for (const d of docs) {
-    try { jobs.push({ id: d.id, ...tallyxml.buildImport(d.extracted, req.org.tally_company) }); }
+    try { jobs.push({ id: d.id, ...tallyxml.buildImport(d.extracted, '') }); }
     catch (e) { await q("update documents set status='error', error=$1 where id=$2", [String(e.message).slice(0, 300), d.id]); }
   }
   const out = { jobs, pull: null, company: req.org.tally_company };
   // Periodically read Tally while it is reachable so edits/deletions appear without a manual sync.
   const range = fyRange();
   PULL_RANGE.set(req.org.id, range);
-  const exportXml = tallyxml.exportRequest(req.org.tally_company, range.start, range.end);
+  const exportXml = tallyxml.exportRequest('', range.start, range.end);
   const requested = !tallyClosed && PULL_REQUESTS.delete(req.org.id);
   const activeRun = !requested && !checking ? await syncrun.current(req.org.id) : null;
   const autoDue = (!activeRun || activeRun.status !== 'running') && Date.now() - (LAST_TALLY_READ.get(req.org.id) || 0) >= AUTO_TALLY_SYNC_MS;
