@@ -434,15 +434,23 @@ app.get('/api/agent/poll', agentOrg, wrap(async (req, res) => {
   res.json(out);
 }));
 
+/** Tally's error text, readable: XML entities decoded, and a hint for the date error (usually a date outside the company's financial year). */
+function friendlyTallyError(message, date) {
+  let m = String(message || '').replace(/&#(d+);/g, (x, n) => String.fromCharCode(+n)).replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim();
+  if (/date is missing|date.*(out of range|not within)/i.test(m)) {
+    m += ` Tally did not accept the date${date ? ' ' + date : ''}. This usually means the date is outside the financial year of the company that is open in TallyPrime (check the company's financial year / books beginning date in Tally), or the date on the document is wrong. Fix it and approve again.`;
+  }
+  return m;
+}
 app.post('/api/agent/jobs/:id/result', agentOrg, express.json(), wrap(async (req, res) => {
-  const d = await q1("select id from documents where id=$1 and org_id=$2 and status='queued'", [parseInt(req.params.id, 10) || 0, req.org.id]);
+  const d = await q1("select id, extracted->>'date' as date from documents where id=$1 and org_id=$2 and status='queued'", [parseInt(req.params.id, 10) || 0, req.org.id]);
   if (!d) throw httpErr(404, 'No such queued job'); // idempotent: a double report is ignored
   const { ok, message = '' } = req.body || {};
   if (ok) {
     await q("update documents set status='synced', synced_at=now(), tally_result=$1, tally_state=null, force_post=false, error=null, company=$3 where id=$2", [String(message).slice(0, 500), d.id, req.org.tally_company || null]);
     PULL_REQUESTS.add(req.org.id); // read the new voucher back right away so it gets linked to this document
   }
-  else await q("update documents set status='error', error=$1 where id=$2", [String(message).slice(0, 500), d.id]);
+  else await q("update documents set status='error', error=$1 where id=$2", [friendlyTallyError(message, d.date).slice(0, 600), d.id]);
   await syncrun.onJobResult(req.org.id);
   res.json({ ok: true });
 }));

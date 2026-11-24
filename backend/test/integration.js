@@ -317,6 +317,13 @@ const tallyDocs = () => q("select id, extracted->>'number' as number from docume
     await q('delete from tally_agents where org_id=$1', [orgId]); await q("update orgs set tally_company='' where id=$1", [orgId]);
     await pollT(1);
 
+    // ---- Tally's date error is shown readable, with a hint
+    const QD = await doc('queued', 'purchase_bill', 'DATE-ERR-1', 'Date Test Co', 100, '2025-09-15');
+    await fetch(BASE + `/api/agent/jobs/${QD}/result`, { method: 'POST', headers: { ...agent, 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, message: 'Voucher date is missing for: &apos;Purchase&apos; voucher DATE-ERR-1. Verify the data.' }) });
+    const eMsg = (await q1('select error from documents where id=$1', [QD])).error;
+    assert.ok(!/&apos;/.test(eMsg) && /'Purchase'/.test(eMsg) && /financial year/.test(eMsg) && /2025-09-15/.test(eMsg), eMsg);
+    ok("Tally's date error is readable (no &apos;) and explains the financial-year cause");
+
     // ---- public access: token login, CORS, signed links, rate limit
     const lj = await (await fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'pw-test-1234' }) })).json();
     assert.ok(lj.ok && typeof lj.token === 'string'); ok('login returns a token');
