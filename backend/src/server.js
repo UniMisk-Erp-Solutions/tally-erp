@@ -177,15 +177,15 @@ app.post('/api/change-password', currentUser, express.json(), wrap(async (req, r
 // ---------- dashboard summary ----------
 app.get('/api/stats', currentUser, wrap(async (req, res) => {
   const o = req.user.org_id;
-  const counts = Object.fromEntries((await q('select status, count(*)::int c from documents where org_id=$1 group by status', [o])).map((r) => [r.status, r.c]));
-  const held = (await q1("select count(*)::int c from documents where org_id=$1 and tally_state in ('possible_duplicate','deleted_in_tally')", [o])).c;
+  const counts = Object.fromEntries((await q(`select status, count(*)::int c from documents where org_id=$1 and (source<>'tally' or company is null or company=(select tally_company from orgs where id=documents.org_id) or (select tally_company from orgs where id=documents.org_id)='') group by status`, [o])).map((r) => [r.status, r.c]));
+  const held = (await q1("select count(*)::int c from documents where org_id=$1 and (source<>'tally' or company is null or company=(select tally_company from orgs where id=documents.org_id) or (select tally_company from orgs where id=documents.org_id)='') and tally_state in ('possible_duplicate','deleted_in_tally')", [o])).c;
   const daily = await q(
     `select to_char(d::date,'YYYY-MM-DD') as day, count(x.id)::int c
      from generate_series(current_date-13, current_date, interval '1 day') d
      left join documents x on x.org_id=$1 and x.source<>'tally' and x.created_at::date = d::date group by d order by d`, [o]);
   const mailboxes = await q1('select count(*)::int total, (count(*) filter (where last_error is null))::int listening from mailboxes where org_id=$1 and active', [o]);
   const org = await q1('select agent_last_seen,tally_ok,tally_checked_at,company_ok,company_checked_at,last_pull_at,last_pull_count,last_pull_result,sync_stage,own_gstin,own_name,tally_company,default_role from orgs where id=$1', [o]);
-  const agents = await q("select host, agent_key, last_seen, tally_ok, company_ok from tally_agents where org_id=$1 and last_seen > now() - interval '75 seconds' order by last_seen desc", [o]);
+  const agents = await q("select host, agent_key, last_seen, tally_ok, company_ok, company_name from tally_agents where org_id=$1 and last_seen > now() - interval '75 seconds' order by last_seen desc", [o]);
   res.json({ counts, held, daily, mailboxes, org, agents, ai: { models: cfg.AI_MODELS, ready: !!cfg.GEMINI_API_KEY }, server_time: new Date().toISOString() });
 }));
 
@@ -225,7 +225,7 @@ const GROUPS = {
 app.get('/api/documents', currentUser, wrap(async (req, res) => {
   let sql = `select id,source,sender,subject,filename,doc_type,status,tally_state,warnings,error,tally_result,created_at,
              extracted->>'number' as number, extracted->>'party_name' as party, extracted->>'total' as total
-             from documents where org_id=$1`;
+             from documents where org_id=$1 and (source<>'tally' or company is null or company=(select tally_company from orgs where id=documents.org_id) or (select tally_company from orgs where id=documents.org_id)='')`;
   const params = [req.user.org_id];
   if (req.query.status) { params.push(String(req.query.status)); sql += ` and status=$${params.length}`; }
   if (GROUPS[req.query.group]) sql += ' and ' + GROUPS[req.query.group];
@@ -369,6 +369,7 @@ async function recordAgent(req) {
   const key = String(req.query.id || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40) || 'ip:' + clientIp(req);
   const host = String(req.query.h || '').replace(/[^\w .-]/g, '').slice(0, 60);
   const t = req.query.tally === '1' ? true : req.query.tally === '0' ? false : null;
+  const cn = String(req.query.cn || '').slice(0, 120).trim();
   await q(`insert into tally_agents(org_id,agent_key,host,last_seen,tally_ok,tally_checked_at)
           values($1,$2,$3,now(),$4,case when $4::boolean is null then null else now() end)
           on conflict (org_id,agent_key) do update set host=coalesce(nullif($3,''),tally_agents.host), last_seen=now(),
@@ -378,11 +379,19 @@ async function recordAgent(req) {
   if (t === true && req.org.tally_company && (req.query.co === '0' || req.query.co === '1')) co = req.query.co === '1';
   if (t === false) await q('update tally_agents set company_ok=null where org_id=$1 and agent_key=$2', [req.org.id, key]);
   else if (co !== null) await q('update tally_agents set company_ok=$3 where org_id=$1 and agent_key=$2', [req.org.id, key, co]);
+  if (cn && t === true) await q('update tally_agents set company_since=case when company_name is distinct from $3 then now() else company_since end, company_name=$3 where org_id=$1 and agent_key=$2', [req.org.id, key, cn]);
   return { key, closed: t === false || co === false };
 }
 /** The account's state from all computers seen in the last 75 seconds: ready if ANY computer has TallyPrime (and the company) open. */
 async function aggregateAgents(org) {
   const rows = await q("select * from tally_agents where org_id=$1 and last_seen > now() - interval '75 seconds'", [org.id]);
+  // The company open on the PC that connected (or switched company) last becomes the active one; older ones are ignored.
+  const named = rows.filter((r) => r.tally_ok && r.company_name).sort((x, y) => new Date(y.company_since || 0) - new Date(x.company_since || 0) || new Date(y.last_seen) - new Date(x.last_seen));
+  if (named.length && named[0].company_name !== org.tally_company) {
+    await q('update orgs set tally_company=$2, company_ok=null, company_checked_at=null where id=$1', [org.id, named[0].company_name]);
+    org.tally_company = named[0].company_name;
+    console.log(`[agent] active company is now "${org.tally_company}" (PC ${named[0].host || named[0].agent_key})`);
+  }
   const withT = rows.filter((r) => r.tally_ok !== null);
   const tally = withT.length ? withT.some((r) => r.tally_ok) : null;
   let company = null;
@@ -430,7 +439,7 @@ app.post('/api/agent/jobs/:id/result', agentOrg, express.json(), wrap(async (req
   if (!d) throw httpErr(404, 'No such queued job'); // idempotent: a double report is ignored
   const { ok, message = '' } = req.body || {};
   if (ok) {
-    await q("update documents set status='synced', synced_at=now(), tally_result=$1, tally_state=null, force_post=false, error=null where id=$2", [String(message).slice(0, 500), d.id]);
+    await q("update documents set status='synced', synced_at=now(), tally_result=$1, tally_state=null, force_post=false, error=null, company=$3 where id=$2", [String(message).slice(0, 500), d.id, req.org.tally_company || null]);
     PULL_REQUESTS.add(req.org.id); // read the new voucher back right away so it gets linked to this document
   }
   else await q("update documents set status='error', error=$1 where id=$2", [String(message).slice(0, 500), d.id]);
@@ -451,10 +460,10 @@ app.post('/api/agent/vouchers', agentOrg, express.text({ type: '*/*', limit: '50
   }
   for (const v of rows) {
     await q(
-      `insert into tally_vouchers(org_id,guid,vch_type,number,vch_date,party,reference,amount) values($1,$2,$3,$4,$5,$6,$7,$8)
+      `insert into tally_vouchers(org_id,guid,vch_type,number,vch_date,party,reference,amount,company) values($1,$2,$3,$4,$5,$6,$7,$8,$9)
        on conflict (org_id,guid) do update set vch_type=excluded.vch_type, number=excluded.number, vch_date=excluded.vch_date,
-       party=excluded.party, reference=excluded.reference, amount=excluded.amount, fetched_at=now()`,
-      [req.org.id, v.guid, v.vch_type, v.number, v.date, v.party, v.reference, v.amount]);
+       party=excluded.party, reference=excluded.reference, amount=excluded.amount, fetched_at=now(), company=excluded.company`,
+      [req.org.id, v.guid, v.vch_type, v.number, v.date, v.party, v.reference, v.amount, req.org.tally_company || null]);
   }
   await q('update orgs set last_pull_at=now(), last_pull_count=$1 where id=$2', [rows.length, req.org.id]);
   console.log(`[agent] voucher export received: ${rawIn.length} bytes, ${rows.length} vouchers parsed`);

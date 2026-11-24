@@ -44,12 +44,14 @@ async function autoResolve(orgId, doc, v) {
 async function afterPull(orgId, vouchers, range) {
   const res = { created: 0, found: 0, held: 0, merged: 0, updated: 0, deleted: 0, reset: 0 };
   const guids = [...new Set(vouchers.map((v) => v.guid))];
+  const active = ((await q1('select tally_company from orgs where id=$1', [orgId])) || {}).tally_company || null;
 
   // 1) vouchers that disappeared from Tally. Skipped when the read returned nothing (could be an error, not a real wipe).
   if (guids.length && range) {
     const gone = (await q(
-      `delete from tally_vouchers where org_id=$1 and vch_date between $2 and $3 and not (guid = any($4)) returning guid`,
-      [orgId, range.start, range.end, guids])).map((g) => g.guid);
+      `delete from tally_vouchers where org_id=$1 and vch_date between $2 and $3 and not (guid = any($4))
+       and ($5::text is null or company is null or company=$5) returning guid`,
+      [orgId, range.start, range.end, guids, active])).map((g) => g.guid);
     res.deleted = gone.length;
     if (gone.length) {
       const back = await q(
@@ -111,10 +113,10 @@ async function afterPull(orgId, vouchers, range) {
       notes: `Entered directly in Tally (voucher no. ${v.number}). The tax split is not available from Tally.`,
     };
     const row = await q1(
-      `insert into documents(org_id,source,source_ref,sender,subject,filename,mime,file_path,doc_type,status,extracted,tally_guid,tally_state,tally_result,synced_at)
-       values($1,'tally',$2,'Tally (typed there)','',$3,'','',$4,'synced',$5::jsonb,$6,'in_sync','Entered directly in Tally',now())
+      `insert into documents(org_id,source,source_ref,sender,subject,filename,mime,file_path,doc_type,status,extracted,tally_guid,tally_state,tally_result,synced_at,company)
+       values($1,'tally',$2,'Tally (typed there)','',$3,'','',$4,'synced',$5::jsonb,$6,'in_sync','Entered directly in Tally',now(),$7)
        on conflict (org_id,source_ref,filename) do nothing returning id`,
-      [orgId, 'tally:' + v.guid, `Tally ${v.vch_type} voucher ${v.number}`, type, JSON.stringify(extracted), v.guid]);
+      [orgId, 'tally:' + v.guid, `Tally ${v.vch_type} voucher ${v.number}`, type, JSON.stringify(extracted), v.guid, active]);
     if (row) res.created++;
   }
   if (res.created) await event(orgId, null, 'new_from_tally', `Added ${res.created} entr${res.created === 1 ? 'y' : 'ies'} that were typed directly in Tally.`);

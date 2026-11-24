@@ -292,6 +292,31 @@ const tallyDocs = () => q("select id, extracted->>'number' as number from docume
     await pollAs('pcA', 1); await q("delete from tally_agents where org_id=$1", [orgId]);
     await pollT(1);
 
+    // ---- another PC opens a different company: it becomes the active one, the earlier company is ignored
+    const pollCn = async (id, t, cn) => (await fetch(BASE + `/api/agent/poll?tally=${t}&cn=${encodeURIComponent(cn)}&id=${id}&h=PC-${id}`, { headers: agent })).json();
+    await q("update orgs set tally_company='', company_ok=null where id=$1", [orgId]);
+    await q("update sync_runs set status='error', finished_at=now() where org_id=$1 and status='running'", [orgId]);
+    await q('delete from tally_agents where org_id=$1', [orgId]);
+    const typedIn = async (company, no) => q1(`insert into documents(org_id,source,source_ref,filename,mime,file_path,doc_type,status,extracted,company) values($1,'tally',$2,$3,'','','sales_invoice','synced','{}'::jsonb,$4) returning id`, [orgId, 'tally:t' + no, 'Tally Sales ' + no, company]);
+    await typedIn('Company X', 'x1'); await typedIn('Company Y', 'y1');
+    const listNames = async () => (await (await fetch(BASE + '/api/documents', { headers: { cookie } })).json()).filter((d) => d.source === 'tally').map((d) => d.filename).sort();
+    let pa = await pollCn('pcA', 1, 'Company X'); assert.strictEqual(pa.company, 'Company X');
+    assert.deepStrictEqual(await listNames(), ['Tally Sales x1']);
+    await new Promise((r) => setTimeout(r, 1100));
+    pa = await pollCn('pcB', 1, 'Company Y'); assert.strictEqual(pa.company, 'Company Y');
+    assert.deepStrictEqual(await listNames(), ['Tally Sales y1']);
+    ok('a second PC opens another company: it becomes active and the earlier company is ignored');
+    const stNew = await (await fetch(BASE + '/api/stats', { headers: { cookie } })).json();
+    assert.strictEqual(stNew.org.tally_company, 'Company Y');
+    await pollCn('pcA', 1, 'Company X'); // the first PC is still on X: no switch back
+    assert.strictEqual((await q1('select tally_company from orgs where id=$1', [orgId])).tally_company, 'Company Y');
+    ok('the first PC polling again does not take the active company back');
+    await pollAs('pcB', 0); const back = await pollCn('pcA', 1, 'Company X'); assert.strictEqual(back.company, 'Company X');
+    assert.deepStrictEqual(await listNames(), ['Tally Sales x1']);
+    ok('when the newest PC closes TallyPrime the other PC\'s company is active again');
+    await q('delete from tally_agents where org_id=$1', [orgId]); await q("update orgs set tally_company='' where id=$1", [orgId]);
+    await pollT(1);
+
     // ---- public access: token login, CORS, signed links, rate limit
     const lj = await (await fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'pw-test-1234' }) })).json();
     assert.ok(lj.ok && typeof lj.token === 'string'); ok('login returns a token');

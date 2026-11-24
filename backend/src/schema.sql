@@ -132,3 +132,11 @@ create table if not exists tally_agents (
 );
 alter table tally_agents enable row level security;
 alter table if exists document_files enable row level security;
+
+-- The company that is open on the PC that connected last is the active one; everything is tagged with its company.
+alter table documents add column if not exists company text;
+alter table tally_vouchers add column if not exists company text;
+alter table tally_agents add column if not exists company_name text;
+alter table tally_agents add column if not exists company_since timestamptz;
+update documents d set company=o.tally_company from orgs o where o.id=d.org_id and d.company is null and o.tally_company<>'' and (d.status='synced' or d.source='tally');
+update tally_vouchers v set company=o.tally_company from orgs o where o.id=v.org_id and v.company is null and o.tally_company<>'';

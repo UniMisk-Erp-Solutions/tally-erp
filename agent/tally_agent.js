@@ -128,29 +128,40 @@ async function tallyReachable() {
 // ---------- is the company named in Setup open in TallyPrime? ----------
 const normName = (s) => String(s || '').replace(/&#[0-9]+;/g, '').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&apos;/gi, "'").toLowerCase().replace(/\s+/g, ' ').trim();
 const COMPANIES_REQUEST = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>TSCompanies</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="TSCompanies"><TYPE>Company</TYPE><FETCH>Name</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>';
-/** true = open, false = TallyPrime answered and that company is not among the open ones, null = could not tell (busy, odd answer): never reported as closed. */
-async function companyOpen(name) {
+/** The names of the companies open in TallyPrime, or null when it could not tell (busy, odd answer). */
+async function loadedCompanies() {
   try {
     const r = await fetch(TALLY, { method: 'POST', headers: { 'Content-Type': 'text/xml' }, body: COMPANIES_REQUEST, signal: AbortSignal.timeout(4000) });
     const xml = await r.text();
-    const names = [...xml.matchAll(/<NAME(?:\s[^>]*)?>([^<]*)<\/NAME>/gi)].map((m) => normName(m[1])).filter(Boolean);
-    for (const m of xml.matchAll(/<COMPANY\s[^>]*NAME="([^"]*)"/gi)) names.push(normName(m[1]));
-    if (!names.length) return null;
-    return names.includes(normName(name));
+    const dec = (s) => String(s || '').replace(/&#[0-9]+;/g, '').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&apos;/gi, "'").trim();
+    const names = [...xml.matchAll(/<NAME(?:\s[^>]*)?>([^<]*)<\/NAME>/gi)].map((m) => dec(m[1])).filter(Boolean);
+    for (const m of xml.matchAll(/<COMPANY\s[^>]*NAME="([^"]*)"/gi)) names.push(dec(m[1]));
+    const uniq = [...new Set(names)];
+    return uniq.length ? uniq : null;
   } catch { return null; }
 }
 const AGENT_ID = crypto.createHash('sha1').update(os.hostname() + '|' + (() => { try { return os.userInfo().username; } catch { return ''; } })()).digest('hex').slice(0, 12); // the same on every start of this PC, different on every other PC
 async function loop() {
   log('agent started ->', SERVER, '| tally:', TALLY);
   let lastErr = '';
-  let tallyWas = null, companyName = '', coState = null, coAt = 0, coWas;
+  let tallyWas = null, companyName = '', coState = null, coAt = 0, coWas, cn = '';
   for (;;) {
     try {
       const up = await tallyReachable(); // told to the server on every poll, so a closed Tally stops a sync at once with a clear message
       if (up !== tallyWas) { log(up ? 'TallyPrime is reachable' : 'TallyPrime is not reachable (is it open, with the connection on port 9000?)'); tallyWas = up; }
-      if (up && companyName && Date.now() - coAt > 5000) { coState = await companyOpen(companyName); coAt = Date.now(); if (coState !== coWas) { log(coState === null ? 'cannot tell which company is open' : coState ? `company "${companyName}" is open` : `company "${companyName}" is NOT open in TallyPrime`); coWas = coState; } }
+      if (up && Date.now() - coAt > 5000) { // which company is open here, and is it the active one?
+        const names = await loadedCompanies();
+        coAt = Date.now();
+        if (names) {
+          cn = names.find((n) => normName(n) === normName(companyName)) || names[0];
+          coState = companyName ? names.some((n) => normName(n) === normName(companyName)) : null;
+        } else { cn = ''; coState = null; }
+        const sig = cn + '|' + coState;
+        if (sig !== coWas) { log(cn ? `company open here: "${cn}"${companyName ? (coState ? ' (active)' : ` - the active company is "${companyName}"`) : ''}` : 'cannot tell which company is open'); coWas = sig; }
+      }
       const co = up && companyName && coState !== null ? `&co=${coState ? 1 : 0}` : '';
-      const r = await fetch(`${SERVER}/api/agent/poll?tally=${up ? 1 : 0}${co}&id=${AGENT_ID}&h=${encodeURIComponent(os.hostname())}`, { headers: AUTH, signal: AbortSignal.timeout(30000) });
+      const cnq = up && cn ? `&cn=${encodeURIComponent(cn)}` : '';
+      const r = await fetch(`${SERVER}/api/agent/poll?tally=${up ? 1 : 0}${co}${cnq}&id=${AGENT_ID}&h=${encodeURIComponent(os.hostname())}`, { headers: AUTH, signal: AbortSignal.timeout(30000) });
       if (!r.ok) throw new Error(`server answered ${r.status}`);
       const data = await r.json();
       if ((data.company || '') !== companyName) { companyName = data.company || ''; coState = null; coAt = 0; }

@@ -1,6 +1,6 @@
 'use strict';
 // Pair our documents with vouchers pulled from Tally, and build the Matching page rows.
-const { q } = require('./core');
+const { q, q1 } = require('./core');
 
 const normNo = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^0+/, '');
 const normName = (s) =>
@@ -18,10 +18,12 @@ const docTotal = (e) => r2(e.taxable_value + e.cgst + e.sgst + e.igst + e.cess +
  * (email / upload) that matches the same voucher replaces them, so one invoice is never listed twice.
  */
 async function pair(orgId) {
+  const active = ((await q1('select tally_company from orgs where id=$1', [orgId])) || {}).tally_company || null; // null = no company known yet: nothing is filtered
   const docs = await q(
     `select id, doc_type, status, source, extracted, tally_guid, tally_state, force_post from documents where org_id=$1
-     and doc_type in ('purchase_bill','sales_invoice') and status in ('approved','queued','synced') order by id`, [orgId]);
-  const vouchers = await q("select * from tally_vouchers where org_id=$1 and vch_type in ('Purchase','Sales')", [orgId]);
+     and doc_type in ('purchase_bill','sales_invoice') and status in ('approved','queued','synced')
+     and ($2::text is null or company is null or company=$2 or status<>'synced') order by id`, [orgId, active]);
+  const vouchers = await q("select * from tally_vouchers where org_id=$1 and vch_type in ('Purchase','Sales') and ($2::text is null or company is null or company=$2)", [orgId, active]);
   const byGuid = new Map(vouchers.map((v) => [v.guid, v]));
   const byNo = new Map();
   for (const v of vouchers) {
