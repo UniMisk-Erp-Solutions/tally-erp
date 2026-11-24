@@ -185,7 +185,8 @@ app.get('/api/stats', currentUser, wrap(async (req, res) => {
      left join documents x on x.org_id=$1 and x.source<>'tally' and x.created_at::date = d::date group by d order by d`, [o]);
   const mailboxes = await q1('select count(*)::int total, (count(*) filter (where last_error is null))::int listening from mailboxes where org_id=$1 and active', [o]);
   const org = await q1('select agent_last_seen,tally_ok,tally_checked_at,company_ok,company_checked_at,last_pull_at,last_pull_count,last_pull_result,sync_stage,own_gstin,own_name,tally_company,default_role from orgs where id=$1', [o]);
-  res.json({ counts, held, daily, mailboxes, org, ai: { models: cfg.AI_MODELS, ready: !!cfg.GEMINI_API_KEY }, server_time: new Date().toISOString() });
+  const agents = await q("select host, agent_key, last_seen, tally_ok, company_ok from tally_agents where org_id=$1 and last_seen > now() - interval '75 seconds' order by last_seen desc", [o]);
+  res.json({ counts, held, daily, mailboxes, org, agents, ai: { models: cfg.AI_MODELS, ready: !!cfg.GEMINI_API_KEY }, server_time: new Date().toISOString() });
 }));
 
 // ---------- mailboxes ----------
@@ -363,26 +364,44 @@ app.get('/api/match', currentUser, wrap(async (req, res) => {
 }));
 
 // ---------- Tally agent API (bearer token) ----------
+/** Store what this computer says about TallyPrime and the company. Returns whether this computer can work right now. */
+async function recordAgent(req) {
+  const key = String(req.query.id || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40) || 'ip:' + clientIp(req);
+  const host = String(req.query.h || '').replace(/[^\w .-]/g, '').slice(0, 60);
+  const t = req.query.tally === '1' ? true : req.query.tally === '0' ? false : null;
+  await q(`insert into tally_agents(org_id,agent_key,host,last_seen,tally_ok,tally_checked_at)
+          values($1,$2,$3,now(),$4,case when $4::boolean is null then null else now() end)
+          on conflict (org_id,agent_key) do update set host=coalesce(nullif($3,''),tally_agents.host), last_seen=now(),
+            tally_ok=coalesce($4,tally_agents.tally_ok),
+            tally_checked_at=case when $4::boolean is null then tally_agents.tally_checked_at else now() end`, [req.org.id, key, host, t]);
+  let co = null;
+  if (t === true && req.org.tally_company && (req.query.co === '0' || req.query.co === '1')) co = req.query.co === '1';
+  if (t === false) await q('update tally_agents set company_ok=null where org_id=$1 and agent_key=$2', [req.org.id, key]);
+  else if (co !== null) await q('update tally_agents set company_ok=$3 where org_id=$1 and agent_key=$2', [req.org.id, key, co]);
+  return { key, closed: t === false || co === false };
+}
+/** The account's state from all computers seen in the last 75 seconds: ready if ANY computer has TallyPrime (and the company) open. */
+async function aggregateAgents(org) {
+  const rows = await q("select * from tally_agents where org_id=$1 and last_seen > now() - interval '75 seconds'", [org.id]);
+  const withT = rows.filter((r) => r.tally_ok !== null);
+  const tally = withT.length ? withT.some((r) => r.tally_ok) : null;
+  let company = null;
+  if (org.tally_company && tally) {
+    const up = rows.filter((r) => r.tally_ok);
+    company = up.some((r) => r.company_ok === true) ? true : up.some((r) => r.company_ok === false) ? false : null;
+  }
+  await q(`update orgs set agent_last_seen=now(),
+           tally_ok=$2, tally_checked_at=case when $2::boolean is null then tally_checked_at else now() end,
+           company_ok=$3, company_checked_at=case when $3::boolean is null then company_checked_at else now() end where id=$1`, [org.id, tally, company]);
+  return { tally, company };
+}
 app.get('/api/agent/poll', agentOrg, wrap(async (req, res) => {
-  // The agent says whether TallyPrime itself answers on its computer (?tally=1 / ?tally=0). Closed Tally = stop any run at once.
-  let tallyClosed = false;
-  if (req.query.tally === '0' || req.query.tally === '1') {
-    await q('update orgs set agent_last_seen=now(), tally_ok=$2, tally_checked_at=now() where id=$1', [req.org.id, req.query.tally === '1']);
-    if (req.query.tally === '0') {
-      tallyClosed = true;
-      if (await syncrun.onTallyClosed(req.org.id)) PULL_REQUESTS.delete(req.org.id);
-    }
-  } else {
-    await q('update orgs set agent_last_seen=now() where id=$1', [req.org.id]);
-  }
-  // With a company named in Setup, the agent also says whether that company is open in TallyPrime (?co=1 / ?co=0).
-  if (!tallyClosed && req.org.tally_company && (req.query.co === '0' || req.query.co === '1')) {
-    await q('update orgs set company_ok=$2, company_checked_at=now() where id=$1', [req.org.id, req.query.co === '1']);
-    if (req.query.co === '0') {
-      tallyClosed = true;
-      if (await syncrun.onTallyClosed(req.org.id, companyClosedText(req.org.tally_company))) PULL_REQUESTS.delete(req.org.id);
-    }
-  }
+  // Every computer running the Tally program reports for itself (?tally=1/0, ?co=1/0, ?id=, ?h=). The account counts as ready when at least one is.
+  const mine = await recordAgent(req);
+  const tallyClosed = mine.closed; // THIS computer cannot do any work now
+  const agg = await aggregateAgents(req.org);
+  if (agg.tally === false && await syncrun.onTallyClosed(req.org.id)) PULL_REQUESTS.delete(req.org.id);
+  else if (agg.company === false && await syncrun.onTallyClosed(req.org.id, companyClosedText(req.org.tally_company))) PULL_REQUESTS.delete(req.org.id);
   const jobs = [];
   const checking = !tallyClosed && req.org.sync_stage === 'checking'; // pre-post check running: hand out no jobs until Tally has been read
   const docs = checking || tallyClosed ? [] : await q("select id, extracted from documents where org_id=$1 and status='queued' order by id limit 20", [req.org.id]);

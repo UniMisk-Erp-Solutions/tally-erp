@@ -208,8 +208,13 @@ function tallyState(){
 const TS_TEXT={agent_off:'Tally program not running',tally_closed:'TallyPrime is not open',company_closed:'Company not open in Tally',ok:'Tally connected'};
 const TS_DOT={agent_off:'bad',tally_closed:'warn',company_closed:'warn',ok:'ok'};
 function counts(){const c=(ST&&ST.counts)||{};return{review:(c.new||0)+(c.extracted||0),approved:c.approved||0,posting:c.queued||0,tally:c.synced||0,issues:(c.error||0)+((ST&&ST.held)||0),all:Object.values(c).reduce((a,b)=>a+b,0)-(c.ignored||0)}}
+function paintAgents(){
+  const el=$('#agent-list');if(!el)return;const l=(ST&&ST.agents)||[];
+  const co=ST&&ST.org&&ST.org.tally_company;
+  el.innerHTML=l.length?`<p class=sub style="margin-bottom:6px"><b>Computers running the Tally program</b> (the sync works when at least one has TallyPrime${co?' and your company':''} open)</p><div class=steps style="margin-bottom:16px">${l.map(a=>`<div class=step><div class=n>${a.tally_ok?'✓':'!'}</div><div><b>${esc(a.host||a.agent_key)}</b> · ${a.tally_ok===false?'TallyPrime is closed':a.tally_ok?'TallyPrime is open':'status unknown (old program)'}${co&&a.tally_ok?(a.company_ok===true?' · company open':a.company_ok===false?' · company NOT open':''):''}</div></div>`).join('')}</div>`:'';
+}
 function paint(){
-  if(!ST||!$('#a-dot'))return;const n=counts();
+  if(!ST||!$('#a-dot'))return;paintAgents();const n=counts();
   const bd=(id,v,hot)=>{const e=$('#'+id);e.hidden=!v;e.textContent=v;e.classList.toggle('hot',!!hot)};
   bd('b-docs',n.review);bd('b-match',n.issues,true);
   const ts=tallyState();
@@ -427,6 +432,7 @@ async function setup(){
     <div class=step><div class=n>a</div><div>Open the downloaded file <b>TallySync-Agent.exe</b> once. It installs itself and closes. If Windows says “protected your PC”, click <b>More info → Run anyway</b>.</div></div>
     <div class=step><div class=n>b</div><div>In Tally, once: <b>F1 Help → Settings → Connectivity → Client/Server</b>, act as <b>Server</b> on port <b>9000</b>, and open your company.</div></div>
     <div class=step><div class=n>c</div><div>That is all. The badge above turns to <b>Connected now</b>, and it reconnects by itself after every restart of the computer.</div></div></div>
+   <div id=agent-list></div>
    <div class=form><label>Company name in Tally</label><input id=tc value="${esc(o.tally_company)}" placeholder="Exactly as shown in TallyPrime"></div>
    <p class=sub style="margin-top:8px">Only this company is used. If it is not open in TallyPrime, Sync stops at once with a message. Leave it empty to use whichever company is open.</p>
    <button class=btn onclick="api('/org',{method:'PUT',body:{tally_company:tc.value}}).then(()=>{toast('Saved.','ok');refreshStats()}).catch(fail)">Save company name</button></div>

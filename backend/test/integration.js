@@ -274,6 +274,24 @@ const tallyDocs = () => q("select id, extracted->>'number' as number from docume
     ok('without a company name nothing is pinned: whichever company is open is used');
     await pollT(1);
 
+    // ---- two computers on one account: one closed Tally must not hide the one that is open
+    const pollAs = async (id, t, co) => (await fetch(BASE + `/api/agent/poll?tally=${t}${co === undefined ? '' : '&co=' + co}&id=${id}&h=PC-${id}`, { headers: agent })).json();
+    await q("update sync_runs set status='error', finished_at=now() where org_id=$1 and status='running'", [orgId]);
+    await q("update orgs set tally_company='' where id=$1", [orgId]);
+    await q('delete from tally_agents where org_id=$1', [orgId]); // forget the single test agent used above
+    for (let i = 0; i < 6; i++) { await pollAs('pcA', 1); await pollAs('pcB', 0); } // alternating reports, like two PCs polling
+    const st2 = await (await fetch(BASE + '/api/stats', { headers: { cookie } })).json();
+    assert.strictEqual(st2.org.tally_ok, true); assert.ok(st2.agents.length >= 2);
+    assert.strictEqual((await raw('/api/pull')).status, 200);
+    await q("update sync_runs set status='error', finished_at=now() where org_id=$1 and status='running'", [orgId]);
+    const outB = await pollAs('pcB', 0); assert.strictEqual(outB.pull, null); assert.deepStrictEqual(outB.jobs, []);
+    ok('one PC with TallyPrime open keeps the account connected, even while another PC reports closed (no flicker)');
+    await pollAs('pcA', 0);
+    const both = await raw('/api/pull'); assert.strictEqual(both.status, 409); assert.strictEqual((await both.json()).code, 'tally_closed');
+    ok('when every computer reports TallyPrime closed, Sync stops at once');
+    await pollAs('pcA', 1); await q("delete from tally_agents where org_id=$1", [orgId]);
+    await pollT(1);
+
     // ---- public access: token login, CORS, signed links, rate limit
     const lj = await (await fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'pw-test-1234' }) })).json();
     assert.ok(lj.ok && typeof lj.token === 'string'); ok('login returns a token');

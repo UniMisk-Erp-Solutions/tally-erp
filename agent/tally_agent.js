@@ -1,5 +1,6 @@
 'use strict';
 const net = require('net');
+const crypto = require('crypto');
 /*
  * TallySync agent (Windows). Download once, double-click once:
  *   - installs itself into %LOCALAPPDATA%\TallySync
@@ -138,6 +139,7 @@ async function companyOpen(name) {
     return names.includes(normName(name));
   } catch { return null; }
 }
+const AGENT_ID = crypto.createHash('sha1').update(os.hostname() + '|' + (() => { try { return os.userInfo().username; } catch { return ''; } })()).digest('hex').slice(0, 12); // the same on every start of this PC, different on every other PC
 async function loop() {
   log('agent started ->', SERVER, '| tally:', TALLY);
   let lastErr = '';
@@ -148,7 +150,7 @@ async function loop() {
       if (up !== tallyWas) { log(up ? 'TallyPrime is reachable' : 'TallyPrime is not reachable (is it open, with the connection on port 9000?)'); tallyWas = up; }
       if (up && companyName && Date.now() - coAt > 5000) { coState = await companyOpen(companyName); coAt = Date.now(); if (coState !== coWas) { log(coState === null ? 'cannot tell which company is open' : coState ? `company "${companyName}" is open` : `company "${companyName}" is NOT open in TallyPrime`); coWas = coState; } }
       const co = up && companyName && coState !== null ? `&co=${coState ? 1 : 0}` : '';
-      const r = await fetch(`${SERVER}/api/agent/poll?tally=${up ? 1 : 0}${co}`, { headers: AUTH, signal: AbortSignal.timeout(30000) });
+      const r = await fetch(`${SERVER}/api/agent/poll?tally=${up ? 1 : 0}${co}&id=${AGENT_ID}&h=${encodeURIComponent(os.hostname())}`, { headers: AUTH, signal: AbortSignal.timeout(30000) });
       if (!r.ok) throw new Error(`server answered ${r.status}`);
       const data = await r.json();
       if ((data.company || '') !== companyName) { companyName = data.company || ''; coState = null; coAt = 0; }

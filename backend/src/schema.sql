@@ -118,3 +118,17 @@ alter table documents add column if not exists storage_path text;     -- the fil
 
 alter table orgs add column if not exists company_ok boolean;           -- is the company named in Setup open in TallyPrime? (reported by the Tally program)
 alter table orgs add column if not exists company_checked_at timestamptz;
+
+-- Several computers can run the Tally program for one account: each one reports for itself.
+create table if not exists tally_agents (
+  org_id int not null references orgs(id) on delete cascade,
+  agent_key text not null,
+  host text default '',
+  last_seen timestamptz not null default now(),
+  tally_ok boolean,
+  tally_checked_at timestamptz,
+  company_ok boolean,
+  primary key (org_id, agent_key)
+);
+alter table tally_agents enable row level security;
+alter table if exists document_files enable row level security;
