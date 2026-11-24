@@ -49,6 +49,19 @@ ok('import has ledgers + voucher', () => {
   assert.strictEqual(p.ledgers.length, 4);
   assert.ok(p.voucher.includes('SVCURRENTCOMPANY>Test Co<'));
 });
+ok('party ledger carries address, state, PAN and GST type from the document', () => {
+  const d = { ...bill, party_gstin: '24AABCS1234D1Z5', party_address: 'Plot 12, GIDC Estate, Vatva, Ahmedabad, Gujarat 382445' };
+  const x = t.buildImport(d, '').ledgers[0];
+  assert.ok(x.includes('<LEDSTATENAME>Gujarat</LEDSTATENAME>') && x.includes('<INCOMETAXNUMBER>AABCS1234D</INCOMETAXNUMBER>'));
+  assert.ok(x.includes('<ADDRESS>Plot 12, GIDC Estate, Vatva, Ahmedabad</ADDRESS>') && x.includes('<GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>'));
+  assert.ok(x.includes('<PARENT>Sundry Creditors</PARENT>'));
+  const u = t.buildImport({ ...d, party_gstin: null }, '').ledgers[0];
+  assert.ok(u.includes('<GSTREGISTRATIONTYPE>Unregistered</GSTREGISTRATIONTYPE>') && !u.includes('LEDSTATENAME'));
+});
+ok('voucher narration carries reference, terms and item details', () => {
+  const v = t.voucherXml({ ...bill, reference_no: 'PO-9', payment_terms: 'Net 30', items: [{ description: 'Widget', qty: 2, unit: 'Nos', rate: 500, hsn: '8481' }] });
+  assert.ok(/Ref PO-9/.test(v) && /Terms Net 30/.test(v) && /Widget x2 Nos @500 HSN 8481/.test(v));
+});
 ok('parse Tally export', () => {
   const xml = '<ENVELOPE><BODY><DATA><COLLECTION><VOUCHER><DATE>20261110</DATE><VOUCHERNUMBER>INV-12</VOUCHERNUMBER>' +
     '<VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME><PARTYLEDGERNAME>ABC Traders &amp; Co</PARTYLEDGERNAME><AMOUNT>-1,180.00</AMOUNT><GUID>g1</GUID></VOUCHER>' +

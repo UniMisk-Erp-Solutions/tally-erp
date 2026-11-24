@@ -14,13 +14,43 @@ function envelope(report, company, inner) {
   );
 }
 
-function ledgerXml(name, parent, gstin) {
-  const g = gstin ? `<PARTYGSTIN>${esc(gstin)}</PARTYGSTIN>` : '';
-  return (
-    '<TALLYMESSAGE xmlns:UDF="TallyUDF">' +
-    `<LEDGER NAME="${esc(name)}" ACTION="Create"><NAME>${esc(name)}</NAME><PARENT>${esc(parent)}</PARENT>${g}</LEDGER>` +
-    '</TALLYMESSAGE>'
-  );
+/** GST state codes (first two digits of a GSTIN) -> state names as TallyPrime spells them. */
+const GST_STATES = { '01': 'Jammu & Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh', '05': 'Uttarakhand', '06': 'Haryana', '07': 'Delhi', '08': 'Rajasthan', '09': 'Uttar Pradesh', 10: 'Bihar', 11: 'Sikkim', 12: 'Arunachal Pradesh', 13: 'Nagaland', 14: 'Manipur', 15: 'Mizoram', 16: 'Tripura', 17: 'Meghalaya', 18: 'Assam', 19: 'West Bengal', 20: 'Jharkhand', 21: 'Odisha', 22: 'Chhattisgarh', 23: 'Madhya Pradesh', 24: 'Gujarat', 26: 'Dadra & Nagar Haveli and Daman & Diu', 27: 'Maharashtra', 29: 'Karnataka', 30: 'Goa', 31: 'Lakshadweep', 32: 'Kerala', 33: 'Tamil Nadu', 34: 'Puducherry', 35: 'Andaman & Nicobar Islands', 36: 'Telangana', 37: 'Andhra Pradesh', 38: 'Ladakh' };
+const GSTIN_RE = /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/;
+
+/** Everything the document tells us about the party, as Tally ledger details. */
+function partyDetails(d) {
+  const gstin = String(d.party_gstin || '').trim().toUpperCase();
+  const valid = GSTIN_RE.test(gstin);
+  const lines = String(d.party_address || '').split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
+  const address = [];
+  for (const part of lines) { // keep short lines, at most 4
+    const last = address[address.length - 1];
+    if (last && (last + ', ' + part).length <= 60 && address.length >= 4) address[address.length - 1] = last + ', ' + part;
+    else if (last && (last + ', ' + part).length <= 40) address[address.length - 1] = last + ', ' + part;
+    else address.push(part.slice(0, 100));
+  }
+  return {
+    gstin: gstin || null,
+    address: address.slice(0, 4),
+    state: valid ? GST_STATES[gstin.slice(0, 2)] || null : null,
+    pan: valid ? gstin.slice(2, 12) : null,
+    regType: valid ? 'Regular' : 'Unregistered',
+  };
+}
+
+function ledgerXml(name, parent, gstin, party) {
+  let x = `<NAME>${esc(name)}</NAME><PARENT>${esc(parent)}</PARENT>`;
+  if (party) { // the party's own ledger: full details from the document
+    x += '<ISBILLWISEON>Yes</ISBILLWISEON>';
+    if (party.address.length) x += `<ADDRESS.LIST TYPE="String">${party.address.map((a) => `<ADDRESS>${esc(a)}</ADDRESS>`).join('')}</ADDRESS.LIST>`;
+    x += '<COUNTRYNAME>India</COUNTRYNAME>';
+    if (party.state) x += `<LEDSTATENAME>${esc(party.state)}</LEDSTATENAME>`;
+    x += `<GSTREGISTRATIONTYPE>${party.regType}</GSTREGISTRATIONTYPE>`;
+    if (party.pan) x += `<INCOMETAXNUMBER>${party.pan}</INCOMETAXNUMBER>`;
+  }
+  if (gstin) x += `<PARTYGSTIN>${esc(gstin)}</PARTYGSTIN>`;
+  return '<TALLYMESSAGE xmlns:UDF="TallyUDF">' + `<LEDGER NAME="${esc(name)}" ACTION="Create">${x}</LEDGER>` + '</TALLYMESSAGE>';
 }
 
 const TAX_KEYS = [['cgst', 'CGST'], ['sgst', 'SGST'], ['igst', 'IGST'], ['cess', 'Cess']];
@@ -29,7 +59,7 @@ const TAX_KEYS = [['cgst', 'CGST'], ['sgst', 'SGST'], ['igst', 'IGST'], ['cess',
 function ledgerPlan(d) {
   const purchase = ['purchase_bill', 'purchase_order'].includes(d.doc_type);
   const out = [
-    [d.party_name, purchase ? 'Sundry Creditors' : 'Sundry Debtors', d.party_gstin || null],
+    [d.party_name, purchase ? 'Sundry Creditors' : 'Sundry Debtors', d.party_gstin || null, partyDetails(d)],
     [purchase ? 'Purchase' : 'Sales', purchase ? 'Purchase Accounts' : 'Sales Accounts', null],
   ];
   for (const [k, label] of TAX_KEYS) if (d[k]) out.push([`${purchase ? 'Input' : 'Output'} ${label}`, 'Duties & Taxes', null]);
@@ -63,7 +93,11 @@ function voucherXml(d) {
     // positive round_off adds to the total (party side already includes it), so it sits opposite the party
     entry('Round Off', Math.abs(d.round_off), (d.round_off > 0) !== partyDebit);
   }
-  const narration = (d.items || []).slice(0, 8).map((i) => `${i.description || ''} x${i.qty ?? ''}`).join('; ').slice(0, 400);
+  const items = (d.items || []).slice(0, 12).map((i) => `${i.description || ''} x${i.qty ?? ''}${i.unit ? ' ' + i.unit : ''}${i.rate ? ' @' + i.rate : ''}${i.hsn ? ' HSN ' + i.hsn : ''}`).join('; ');
+  const narration = [
+    `Inv ${d.number}${d.date ? ' dt ' + d.date : ''}`, d.reference_no ? `Ref ${d.reference_no}` : '', d.due_date ? `Due ${d.due_date}` : '',
+    d.payment_terms ? `Terms ${d.payment_terms}` : '', d.place_of_supply ? `POS ${d.place_of_supply}` : '', items ? `Items: ${items}` : '',
+    d.notes ? String(d.notes) : '', 'via TallySync'].filter(Boolean).join(' | ').slice(0, 700);
   return (
     '<TALLYMESSAGE xmlns:UDF="TallyUDF">' +
     `<VOUCHER VCHTYPE="${vtype}" ACTION="Create" OBJVIEW="Accounting Voucher View">` +
@@ -77,7 +111,7 @@ function voucherXml(d) {
 /** XML payloads the agent must post, in order: ledgers first, then the voucher. */
 function buildImport(d, company) {
   return {
-    ledgers: ledgerPlan(d).map(([n, p, g]) => envelope('All Masters', company, ledgerXml(n, p, g))),
+    ledgers: ledgerPlan(d).map(([n, p, g, party]) => envelope('All Masters', company, ledgerXml(n, p, g, party))),
     voucher: envelope('Vouchers', company, voucherXml(d)),
   };
 }
