@@ -124,17 +124,34 @@ async function tallyReachable() {
   }
   return false;
 }
+// ---------- is the company named in Setup open in TallyPrime? ----------
+const normName = (s) => String(s || '').replace(/&#[0-9]+;/g, '').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&apos;/gi, "'").toLowerCase().replace(/\s+/g, ' ').trim();
+const COMPANIES_REQUEST = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>TSCompanies</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="TSCompanies"><TYPE>Company</TYPE><FETCH>Name</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>';
+/** true = open, false = TallyPrime answered and that company is not among the open ones, null = could not tell (busy, odd answer): never reported as closed. */
+async function companyOpen(name) {
+  try {
+    const r = await fetch(TALLY, { method: 'POST', headers: { 'Content-Type': 'text/xml' }, body: COMPANIES_REQUEST, signal: AbortSignal.timeout(4000) });
+    const xml = await r.text();
+    const names = [...xml.matchAll(/<NAME(?:\s[^>]*)?>([^<]*)<\/NAME>/gi)].map((m) => normName(m[1])).filter(Boolean);
+    for (const m of xml.matchAll(/<COMPANY\s[^>]*NAME="([^"]*)"/gi)) names.push(normName(m[1]));
+    if (!names.length) return null;
+    return names.includes(normName(name));
+  } catch { return null; }
+}
 async function loop() {
   log('agent started ->', SERVER, '| tally:', TALLY);
   let lastErr = '';
-  let tallyWas = null;
+  let tallyWas = null, companyName = '', coState = null, coAt = 0, coWas;
   for (;;) {
     try {
       const up = await tallyReachable(); // told to the server on every poll, so a closed Tally stops a sync at once with a clear message
       if (up !== tallyWas) { log(up ? 'TallyPrime is reachable' : 'TallyPrime is not reachable (is it open, with the connection on port 9000?)'); tallyWas = up; }
-      const r = await fetch(`${SERVER}/api/agent/poll?tally=${up ? 1 : 0}`, { headers: AUTH, signal: AbortSignal.timeout(30000) });
+      if (up && companyName && Date.now() - coAt > 5000) { coState = await companyOpen(companyName); coAt = Date.now(); if (coState !== coWas) { log(coState === null ? 'cannot tell which company is open' : coState ? `company "${companyName}" is open` : `company "${companyName}" is NOT open in TallyPrime`); coWas = coState; } }
+      const co = up && companyName && coState !== null ? `&co=${coState ? 1 : 0}` : '';
+      const r = await fetch(`${SERVER}/api/agent/poll?tally=${up ? 1 : 0}${co}`, { headers: AUTH, signal: AbortSignal.timeout(30000) });
       if (!r.ok) throw new Error(`server answered ${r.status}`);
       const data = await r.json();
+      if ((data.company || '') !== companyName) { companyName = data.company || ''; coState = null; coAt = 0; }
       if (lastErr) log('connection to the server is OK again');
       lastErr = '';
       if (!up) { await sleep(TICK); continue; } // nothing can be done while Tally is closed; the server has already stopped any sync

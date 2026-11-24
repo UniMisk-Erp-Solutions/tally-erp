@@ -253,6 +253,27 @@ const tallyDocs = () => q("select id, extracted->>'number' as number from docume
     ok('TallyPrime closed: Sync from Tally says so instantly (under 2 seconds)');
     await pollT(1);
 
+    // ---- the company named in Setup must be open in TallyPrime
+    const pollCo = async (co) => (await fetch(BASE + '/api/agent/poll?tally=1&co=' + co, { headers: agent })).json();
+    await q("update orgs set tally_company='Acme Traders' where id=$1", [orgId]);
+    let pj = await pollCo(1);
+    assert.strictEqual(pj.company, 'Acme Traders');
+    assert.strictEqual((await raw('/api/pull')).status, 200); // company is open: the sync starts
+    await q("update sync_runs set status='error', finished_at=now() where org_id=$1 and status='running'", [orgId]);
+    await pollCo(0);
+    let t1 = Date.now(); let cr = await raw('/api/pull'); let cj = await cr.json();
+    assert.strictEqual(cr.status, 409); assert.strictEqual(cj.code, 'company_closed'); assert.ok(/Acme Traders/.test(cj.detail)); assert.ok(Date.now() - t1 < 2000);
+    ok('company named in Setup is not open in TallyPrime: Sync stops at once and names the company');
+    assert.strictEqual((await raw('/api/pull')).status, 409);
+    await pollCo(1);
+    assert.strictEqual((await raw('/api/pull')).status, 200);
+    await q("update sync_runs set status='error', finished_at=now() where org_id=$1 and status='running'", [orgId]);
+    ok('once that company is open, Sync works again');
+    await q("update orgs set tally_company='', company_ok=null where id=$1", [orgId]);
+    await pollCo(0); cr = await raw('/api/pull'); assert.notStrictEqual((await cr.json()).code, 'company_closed');
+    ok('without a company name nothing is pinned: whichever company is open is used');
+    await pollT(1);
+
     // ---- public access: token login, CORS, signed links, rate limit
     const lj = await (await fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'pw-test-1234' }) })).json();
     assert.ok(lj.ok && typeof lj.token === 'string'); ok('login returns a token');

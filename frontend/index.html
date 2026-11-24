@@ -202,10 +202,11 @@ function tallyState(){
   if(!agentOn())return 'agent_off';
   const o=ST&&ST.org;
   if(o&&o.tally_ok===false&&o.tally_checked_at&&(Date.now()-new Date(o.tally_checked_at))/1000<30)return 'tally_closed';
+  if(o&&o.tally_company&&o.company_ok===false&&o.company_checked_at&&(Date.now()-new Date(o.company_checked_at))/1000<30)return 'company_closed';
   return 'ok';
 }
-const TS_TEXT={agent_off:'Tally program not running',tally_closed:'TallyPrime is not open',ok:'Tally connected'};
-const TS_DOT={agent_off:'bad',tally_closed:'warn',ok:'ok'};
+const TS_TEXT={agent_off:'Tally program not running',tally_closed:'TallyPrime is not open',company_closed:'Company not open in Tally',ok:'Tally connected'};
+const TS_DOT={agent_off:'bad',tally_closed:'warn',company_closed:'warn',ok:'ok'};
 function counts(){const c=(ST&&ST.counts)||{};return{review:(c.new||0)+(c.extracted||0),approved:c.approved||0,posting:c.queued||0,tally:c.synced||0,issues:(c.error||0)+((ST&&ST.held)||0),all:Object.values(c).reduce((a,b)=>a+b,0)-(c.ignored||0)}}
 function paint(){
   if(!ST||!$('#a-dot'))return;const n=counts();
@@ -214,7 +215,7 @@ function paint(){
   const ts=tallyState();
   $('#a-dot').className='dot '+TS_DOT[ts];
   $('#a-txt').textContent=TS_TEXT[ts];
-  const ap=$('#agent-pill');if(ap){ap.className='pill '+(ts==='ok'?'ok':'s-extracted');ap.textContent=ts==='ok'?'Connected now':ts==='tally_closed'?'Program running, TallyPrime is closed':'Not connected yet'}
+  const ap=$('#agent-pill');if(ap){ap.className='pill '+(ts==='ok'?'ok':'s-extracted');ap.textContent=ts==='ok'?'Connected now':ts==='tally_closed'?'Program running, TallyPrime is closed':ts==='company_closed'?'Program running, your company is not open':'Not connected yet'}
 }
 
 /* ---------- frame ---------- */
@@ -426,7 +427,9 @@ async function setup(){
     <div class=step><div class=n>a</div><div>Open the downloaded file <b>TallySync-Agent.exe</b> once. It installs itself and closes. If Windows says “protected your PC”, click <b>More info → Run anyway</b>.</div></div>
     <div class=step><div class=n>b</div><div>In Tally, once: <b>F1 Help → Settings → Connectivity → Client/Server</b>, act as <b>Server</b> on port <b>9000</b>, and open your company.</div></div>
     <div class=step><div class=n>c</div><div>That is all. The badge above turns to <b>Connected now</b>, and it reconnects by itself after every restart of the computer.</div></div></div>
-   <p class=sub>No company name is needed. The software always uses the company that is open in TallyPrime on that computer, so the same login works on any PC.</p></div>
+   <div class=form><label>Company name in Tally</label><input id=tc value="${esc(o.tally_company)}" placeholder="Exactly as shown in TallyPrime"></div>
+   <p class=sub style="margin-top:8px">Only this company is used. If it is not open in TallyPrime, Sync stops at once with a message. Leave it empty to use whichever company is open.</p>
+   <button class=btn onclick="api('/org',{method:'PUT',body:{tally_company:tc.value}}).then(()=>{toast('Saved.','ok');refreshStats()}).catch(fail)">Save company name</button></div>
   <details><summary>Advanced</summary><div class=card><div class=head><h2>Tally program</h2></div><p class=sub>It lives in <code>%LOCALAPPDATA%\\TallySync</code> and starts with Windows (per user, no administrator needed). To remove it completely: press <b>Win + R</b>, paste <code>%LOCALAPPDATA%\\TallySync\\TallySync-Agent.exe --uninstall</code> and press Enter. To update, download it again and open it: the old copy is replaced.<br>The log is <code>agent.log</code> in the same folder. <a href="#" onclick="openSigned('/api/agent-config');return false">Settings file</a> · <a href="${BASE}/downloads/TallySync-Agent.exe">Program without settings</a>${CFG.STUDIO_URL?` · <a href="${esc(CFG.STUDIO_URL)}" target="_blank" rel="noopener">Database (Supabase Studio)</a>`:''} (for IT: put the settings file next to it).</p></div><div class=card><div class=head><h2>AI</h2></div><p class=sub>Documents are read with free models only: <code>${esc(ME.ai_model)}</code> ${ME.ai_ready?'<span class="pill ok">key set</span>':'<span class="pill bad">key missing</span>'}<br>On Google's free tier, documents may be used to improve their products. Keep billing off for the key.</p></div></details>`});
   paint();
 }

@@ -48,14 +48,18 @@ const AUTO_TALLY_SYNC_MS = Math.max(15_000, (parseInt(process.env.TALLY_AUTO_SYN
  * Before starting a sync: is there anybody to do it? Refuses at once, with a clear message, when the Tally program is not
  * running on the Tally computer, or when it says TallyPrime itself is not open. (Unknown Tally state = let it try.)
  */
+const companyClosedText = (name) => `The company "${name}" is not open in TallyPrime. Open that company in TallyPrime (or correct the name in Setup), then click Sync again.`;
 async function preflight(orgId) {
-  const o = await q1('select agent_last_seen, tally_ok, tally_checked_at from orgs where id=$1', [orgId]);
+  const o = await q1('select agent_last_seen, tally_ok, tally_checked_at, tally_company, company_ok, company_checked_at from orgs where id=$1', [orgId]);
   const age = (t) => (t ? (Date.now() - new Date(t).getTime()) / 1000 : Infinity);
   if (age(o.agent_last_seen) > 60) {
     throw Object.assign(httpErr(409, 'The Tally program is not running on the Tally computer, so nothing can be synced. Start it (the light at the top right turns green), or see Setup if it is not installed yet.'), { code: 'agent_offline' });
   }
   if (!o.tally_checked_at || age(o.tally_checked_at) - age(o.agent_last_seen) > 20) { // an older Tally program never says whether TallyPrime is open, so a closed Tally would only show up as a long wait
     throw Object.assign(httpErr(409, 'The Tally program on the Tally computer is an old version and cannot tell whether TallyPrime is open. Open Setup, click "Download the Tally program" and open the downloaded file once (it replaces the old one). Then click Sync again.'), { code: 'agent_outdated' });
+  }
+  if (o.tally_company && o.company_ok === false && age(o.company_checked_at) < 30) {
+    throw Object.assign(httpErr(409, companyClosedText(o.tally_company)), { code: 'company_closed' });
   }
   if (o.tally_ok === false) {
     throw Object.assign(httpErr(409, 'TallyPrime is not open on the Tally computer, or its connection is off. Open TallyPrime and your company. Once: F1 Help > Settings > Connectivity > Client/Server, set TallyPrime to act as Server on port 9000. Then click Sync again.'), { code: 'tally_closed' });
@@ -153,7 +157,7 @@ app.put('/api/org', currentUser, express.json(), wrap(async (req, res) => {
     if (!['buyer', 'seller'].includes(b.default_role)) throw httpErr(400, 'Usual role must be buyer or seller');
     await q('update orgs set default_role=$1 where id=$2', [b.default_role, req.user.org_id]);
   }
-  if (b.tally_company !== undefined) await q('update orgs set tally_company=$1 where id=$2', [String(b.tally_company).trim(), req.user.org_id]);
+  if (b.tally_company !== undefined) await q('update orgs set tally_company=$1, company_ok=null, company_checked_at=null where id=$2', [String(b.tally_company).trim(), req.user.org_id]);
   res.json({ ok: true });
 }));
 app.get('/api/events', currentUser, wrap(async (req, res) => {
@@ -180,7 +184,7 @@ app.get('/api/stats', currentUser, wrap(async (req, res) => {
      from generate_series(current_date-13, current_date, interval '1 day') d
      left join documents x on x.org_id=$1 and x.source<>'tally' and x.created_at::date = d::date group by d order by d`, [o]);
   const mailboxes = await q1('select count(*)::int total, (count(*) filter (where last_error is null))::int listening from mailboxes where org_id=$1 and active', [o]);
-  const org = await q1('select agent_last_seen,tally_ok,tally_checked_at,last_pull_at,last_pull_count,last_pull_result,sync_stage,own_gstin,own_name,tally_company,default_role from orgs where id=$1', [o]);
+  const org = await q1('select agent_last_seen,tally_ok,tally_checked_at,company_ok,company_checked_at,last_pull_at,last_pull_count,last_pull_result,sync_stage,own_gstin,own_name,tally_company,default_role from orgs where id=$1', [o]);
   res.json({ counts, held, daily, mailboxes, org, ai: { models: cfg.AI_MODELS, ready: !!cfg.GEMINI_API_KEY }, server_time: new Date().toISOString() });
 }));
 
@@ -371,18 +375,26 @@ app.get('/api/agent/poll', agentOrg, wrap(async (req, res) => {
   } else {
     await q('update orgs set agent_last_seen=now() where id=$1', [req.org.id]);
   }
+  // With a company named in Setup, the agent also says whether that company is open in TallyPrime (?co=1 / ?co=0).
+  if (!tallyClosed && req.org.tally_company && (req.query.co === '0' || req.query.co === '1')) {
+    await q('update orgs set company_ok=$2, company_checked_at=now() where id=$1', [req.org.id, req.query.co === '1']);
+    if (req.query.co === '0') {
+      tallyClosed = true;
+      if (await syncrun.onTallyClosed(req.org.id, companyClosedText(req.org.tally_company))) PULL_REQUESTS.delete(req.org.id);
+    }
+  }
   const jobs = [];
   const checking = !tallyClosed && req.org.sync_stage === 'checking'; // pre-post check running: hand out no jobs until Tally has been read
   const docs = checking || tallyClosed ? [] : await q("select id, extracted from documents where org_id=$1 and status='queued' order by id limit 20", [req.org.id]);
   for (const d of docs) {
-    try { jobs.push({ id: d.id, ...tallyxml.buildImport(d.extracted, '') }); }
+    try { jobs.push({ id: d.id, ...tallyxml.buildImport(d.extracted, req.org.tally_company) }); }
     catch (e) { await q("update documents set status='error', error=$1 where id=$2", [String(e.message).slice(0, 300), d.id]); }
   }
   const out = { jobs, pull: null, company: req.org.tally_company };
   // Periodically read Tally while it is reachable so edits/deletions appear without a manual sync.
   const range = fyRange();
   PULL_RANGE.set(req.org.id, range);
-  const exportXml = tallyxml.exportRequest('', range.start, range.end);
+  const exportXml = tallyxml.exportRequest(req.org.tally_company, range.start, range.end);
   const requested = !tallyClosed && PULL_REQUESTS.delete(req.org.id);
   const activeRun = !requested && !checking ? await syncrun.current(req.org.id) : null;
   const autoDue = (!activeRun || activeRun.status !== 'running') && Date.now() - (LAST_TALLY_READ.get(req.org.id) || 0) >= AUTO_TALLY_SYNC_MS;

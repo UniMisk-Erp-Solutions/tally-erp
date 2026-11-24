@@ -40,11 +40,11 @@ async function current(orgId) {
 }
 
 /** The Tally program reported that TallyPrime itself is not answering. Returns true if a run was stopped because of it. */
-async function onTallyClosed(orgId) {
+async function onTallyClosed(orgId, message = TALLY_CLOSED) {
   const run = await q1("select * from sync_runs where org_id=$1 and status='running' order by id desc limit 1", [orgId]);
   if (!run) return false;
   const note = run.kind === 'to' && run.stage === 'posting' ? ' Documents that were not posted are back to Approved.' : '';
-  await abort(run, TALLY_CLOSED + note);
+  await abort(run, message + note);
   return true;
 }
 

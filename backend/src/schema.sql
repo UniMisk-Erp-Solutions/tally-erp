@@ -115,3 +115,6 @@ create table if not exists document_files (
 
 alter table users add column if not exists auth_id uuid unique;      -- the user's id in Supabase Auth (auth.users)
 alter table documents add column if not exists storage_path text;     -- the file's path in the Supabase Storage bucket "documents"
+
+alter table orgs add column if not exists company_ok boolean;           -- is the company named in Setup open in TallyPrime? (reported by the Tally program)
+alter table orgs add column if not exists company_checked_at timestamptz;
