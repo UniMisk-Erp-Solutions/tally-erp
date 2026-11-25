@@ -70,6 +70,18 @@ async function preflight(orgId) {
 const publicBase = (req) => cfg.PUBLIC_API_URL || `${req.protocol}://${req.get('host')}`;
 
 /** Indian financial year to date: 1 April .. today. */
+/**
+ * The period Tally is read for: this financial year, widened to also cover the dates of this company's own documents.
+ * Otherwise a bill dated in an earlier year would be posted fine but never found again when Tally is read back.
+ */
+async function pullRange(orgId) {
+  const r = fyRange();
+  const d = await q1("select min(extracted->>'date') lo, max(extracted->>'date') hi from documents where org_id=$1 and source<>'tally' and status in ('approved','queued','synced') and extracted->>'date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'", [orgId]);
+  const floor = `${new Date().getFullYear() - 5}-04-01`;
+  if (d && d.lo && d.lo < r.start) r.start = d.lo < floor ? floor : d.lo;
+  if (d && d.hi && d.hi > r.end) r.end = d.hi;
+  return r;
+}
 function fyRange() {
   const t = new Date();
   const y = t.getMonth() >= 3 ? t.getFullYear() : t.getFullYear() - 1;
@@ -422,7 +434,7 @@ app.get('/api/agent/poll', agentOrg, wrap(async (req, res) => {
   }
   const out = { jobs, pull: null, company: req.org.tally_company };
   // Periodically read Tally while it is reachable so edits/deletions appear without a manual sync.
-  const range = fyRange();
+  const range = await pullRange(req.org.id);
   PULL_RANGE.set(req.org.id, range);
   const exportXml = tallyxml.exportRequest(req.org.tally_company, range.start, range.end);
   const requested = !tallyClosed && PULL_REQUESTS.delete(req.org.id);
@@ -478,7 +490,7 @@ app.post('/api/agent/vouchers', agentOrg, express.text({ type: '*/*', limit: '50
   await q('update orgs set last_pull_at=now(), last_pull_count=$1 where id=$2', [rows.length, req.org.id]);
   console.log(`[agent] voucher export received: ${rawIn.length} bytes, ${rows.length} vouchers parsed`);
   if (!rows.length) console.log('[agent] export had no vouchers; first 600 chars:', rawIn.slice(0, 600).replace(/\s+/g, ' '));
-  const result = await reconcile.afterPull(req.org.id, rows, PULL_RANGE.get(req.org.id) || fyRange());
+  const result = await reconcile.afterPull(req.org.id, rows, PULL_RANGE.get(req.org.id) || await pullRange(req.org.id));
   if (Object.values(result).some(Boolean)) console.log('[sync]', JSON.stringify(result));
   // a usable read of Tally ends the pre-post check. An answer that looks like an error is not trusted: the documents stay
   // queued instead of being posted without a real duplicate check.

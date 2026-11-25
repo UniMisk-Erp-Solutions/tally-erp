@@ -317,6 +317,18 @@ const tallyDocs = () => q("select id, extracted->>'number' as number from docume
     await q('delete from tally_agents where org_id=$1', [orgId]); await q("update orgs set tally_company='' where id=$1", [orgId]);
     await pollT(1);
 
+    // ---- Tally is read for a period that also covers the documents' dates (so an older bill can be confirmed after posting)
+    await q("update sync_runs set status='error', finished_at=now() where org_id=$1 and status='running'", [orgId]);
+    await q('delete from tally_agents where org_id=$1', [orgId]);
+    const OLD = await doc('approved', 'purchase_bill', 'OLD-1', 'Old Co', 100, '2024-05-10');
+    await pollT(1);
+    assert.strictEqual((await raw('/api/pull')).status, 200);
+    const pj2 = await pollT(1);
+    assert.ok(pj2.pull && pj2.pull.includes('<SVFROMDATE>20240510</SVFROMDATE>'), 'range start: ' + String(pj2.pull).slice(0, 400));
+    await q("update sync_runs set status='error', finished_at=now() where org_id=$1 and status='running'", [orgId]);
+    await q('delete from documents where id=$1', [OLD]);
+    ok('Tally is read from the earliest document date, not only the current financial year');
+
     // ---- Tally's date error is shown readable, with a hint
     const QD = await doc('queued', 'purchase_bill', 'DATE-ERR-1', 'Date Test Co', 100, '2025-09-15');
     await fetch(BASE + `/api/agent/jobs/${QD}/result`, { method: 'POST', headers: { ...agent, 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, message: 'Voucher date is missing for: &apos;Purchase&apos; voucher DATE-ERR-1. Verify the data.' }) });
