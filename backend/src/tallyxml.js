@@ -18,6 +18,13 @@ function envelope(report, company, inner) {
 const GST_STATES = { '01': 'Jammu & Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh', '05': 'Uttarakhand', '06': 'Haryana', '07': 'Delhi', '08': 'Rajasthan', '09': 'Uttar Pradesh', 10: 'Bihar', 11: 'Sikkim', 12: 'Arunachal Pradesh', 13: 'Nagaland', 14: 'Manipur', 15: 'Mizoram', 16: 'Tripura', 17: 'Meghalaya', 18: 'Assam', 19: 'West Bengal', 20: 'Jharkhand', 21: 'Odisha', 22: 'Chhattisgarh', 23: 'Madhya Pradesh', 24: 'Gujarat', 26: 'Dadra & Nagar Haveli and Daman & Diu', 27: 'Maharashtra', 29: 'Karnataka', 30: 'Goa', 31: 'Lakshadweep', 32: 'Kerala', 33: 'Tamil Nadu', 34: 'Puducherry', 35: 'Andaman & Nicobar Islands', 36: 'Telangana', 37: 'Andhra Pradesh', 38: 'Ladakh' };
 const GSTIN_RE = /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/;
 
+/** 1 April of the financial year a date (YYYY-MM-DD) falls in, as YYYYMMDD. */
+function fyStart(date) {
+  const m = String(date || '').match(/^(d{4})-(d{2})/);
+  const y = m ? (+m[2] >= 4 ? +m[1] : +m[1] - 1) : new Date().getFullYear();
+  return `${y}0401`;
+}
+
 /** Everything the document tells us about the party, as Tally ledger details. */
 function partyDetails(d) {
   const gstin = String(d.party_gstin || '').trim().toUpperCase();
@@ -36,6 +43,8 @@ function partyDetails(d) {
     state: valid ? GST_STATES[gstin.slice(0, 2)] || null : null,
     pan: valid ? gstin.slice(2, 12) : null,
     regType: valid ? 'Regular' : 'Unregistered',
+    pin: (String(d.party_address || '').match(/(?<![0-9])[1-9][0-9]{5}(?![0-9])/) || [null])[0],
+    from: fyStart(d.date), // the details apply from the start of the financial year of the document
   };
 }
 
@@ -43,8 +52,15 @@ function ledgerXml(name, parent, gstin, party) {
   let x = `<NAME>${esc(name)}</NAME><PARENT>${esc(parent)}</PARENT>`;
   if (party) { // the party's own ledger: full details from the document
     x += '<ISBILLWISEON>Yes</ISBILLWISEON>';
+    // TallyPrime keeps mailing details and GST registration in dated blocks; the older flat tags are sent too.
+    x += `<LEDMAILINGDETAILS.LIST><APPLICABLEFROM>${party.from}</APPLICABLEFROM><MAILINGNAME>${esc(name)}</MAILINGNAME>`;
     if (party.address.length) x += `<ADDRESS.LIST TYPE="String">${party.address.map((a) => `<ADDRESS>${esc(a)}</ADDRESS>`).join('')}</ADDRESS.LIST>`;
-    x += '<COUNTRYNAME>India</COUNTRYNAME>';
+    if (party.state) x += `<STATE>${esc(party.state)}</STATE>`;
+    x += '<COUNTRY>India</COUNTRY>';
+    if (party.pin) x += `<PINCODE>${party.pin}</PINCODE>`;
+    x += '</LEDMAILINGDETAILS.LIST>';
+    x += `<LEDGSTREGDETAILS.LIST><APPLICABLEFROM>${party.from}</APPLICABLEFROM><GSTREGISTRATIONTYPE>${party.regType}</GSTREGISTRATIONTYPE>${party.state ? `<PLACEOFSUPPLY>${esc(party.state)}</PLACEOFSUPPLY>` : ''}${gstin ? `<GSTIN>${esc(gstin)}</GSTIN>` : ''}</LEDGSTREGDETAILS.LIST>`;
+    x += '<COUNTRYOFRESIDENCE>India</COUNTRYOFRESIDENCE>';
     if (party.state) x += `<LEDSTATENAME>${esc(party.state)}</LEDSTATENAME>`;
     x += `<GSTREGISTRATIONTYPE>${party.regType}</GSTREGISTRATIONTYPE>`;
     if (party.pan) x += `<INCOMETAXNUMBER>${party.pan}</INCOMETAXNUMBER>`;

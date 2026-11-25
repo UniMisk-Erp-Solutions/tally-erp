@@ -53,6 +53,7 @@ ok('party ledger carries address, state, PAN and GST type from the document', ()
   const d = { ...bill, party_gstin: '24AABCS1234D1Z5', party_address: 'Plot 12, GIDC Estate, Vatva, Ahmedabad, Gujarat 382445' };
   const x = t.buildImport(d, '').ledgers[0];
   assert.ok(x.includes('<LEDSTATENAME>Gujarat</LEDSTATENAME>') && x.includes('<INCOMETAXNUMBER>AABCS1234D</INCOMETAXNUMBER>'));
+  assert.ok(x.includes('<LEDMAILINGDETAILS.LIST>') && x.includes('<STATE>Gujarat</STATE>') && x.includes('<PINCODE>382445</PINCODE>') && x.includes('<LEDGSTREGDETAILS.LIST>') && x.includes('<GSTIN>24AABCS1234D1Z5</GSTIN>') && x.includes('<APPLICABLEFROM>20260401</APPLICABLEFROM>'));
   assert.ok(x.includes('<ADDRESS>Plot 12, GIDC Estate, Vatva, Ahmedabad</ADDRESS>') && x.includes('<GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>'));
   assert.ok(x.includes('<PARENT>Sundry Creditors</PARENT>'));
   const u = t.buildImport({ ...d, party_gstin: null }, '').ledgers[0];
