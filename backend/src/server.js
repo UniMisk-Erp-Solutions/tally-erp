@@ -115,11 +115,13 @@ async function checkPassword(u, password) {
   u.auth_id = id;
   return true;
 }
+const loginEmail = (e) => { const v = String(e || '').trim().toLowerCase(); return !v || v.includes('@') ? v : v + '@tallysync.local'; };
 app.post('/api/login', express.json(), wrap(async (req, res) => {
-  const { email = '', password = '' } = req.body || {};
-  const idKey = clientIp(req) + '|' + String(email).toLowerCase(), ipKey = clientIp(req);
+  const { password = '' } = req.body || {};
+  const email = loginEmail((req.body || {}).email); // a plain username like "preet" means preet@tallysync.local
+  const idKey = clientIp(req) + '|' + email, ipKey = clientIp(req);
   if (recentFails(idKey).length >= 8 || recentFails(ipKey).length >= 40) throw Object.assign(httpErr(429, 'Too many wrong attempts. Please wait 15 minutes and try again.'), { code: 'rate_limited' });
-  const u = await q1('select * from users where email=$1', [String(email).toLowerCase()]);
+  const u = await q1('select * from users where email=$1', [email]);
   if (!u || !(await checkPassword(u, String(password)))) {
     recentFails(idKey).push(Date.now()); recentFails(ipKey).push(Date.now());
     throw httpErr(401, 'Wrong email or password');

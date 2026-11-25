@@ -226,7 +226,7 @@ function paint(){
 /* ---------- frame ---------- */
 function render(){
   if(!ME){
-    $('#app').innerHTML=`<header class=bar><div class=logo>${LOGO}<span>TallySync</span></div></header><main id=m>${page({eyebrow:'Email to Tally',title:'Sign in',lead:'Bills and orders from your inbox, read by AI and posted to Tally after your approval.',body:`<div class="card auth-card"><div class=head><h2>Your account</h2></div><div class=form><input id=em placeholder=Email autocomplete=username><input id=pw type=password placeholder=Password autocomplete=current-password></div><button class="btn pri" style="width:100%" id=login>Sign in</button></div>`})}</main>`;
+    $('#app').innerHTML=`<header class=bar><div class=logo>${LOGO}<span>TallySync</span></div></header><main id=m>${page({eyebrow:'Email to Tally',title:'Sign in',lead:'Bills and orders from your inbox, read by AI and posted to Tally after your approval.',body:`<div class="card auth-card"><div class=head><h2>Your account</h2></div><div class=form><input id=em placeholder="Email or username" autocomplete=username><input id=pw type=password placeholder=Password autocomplete=current-password></div><button class="btn pri" style="width:100%" id=login>Sign in</button></div>`})}</main>`;
     $('#login').onclick=doLogin;$('#pw').onkeydown=e=>e.key==='Enter'&&doLogin();return}
   $('#app').innerHTML=`<header class=bar><div class=logo>${LOGO}<span>TallySync</span></div>
    <button class="tab" id=t-docs>Documents<em class=badge id=b-docs hidden></em></button>
